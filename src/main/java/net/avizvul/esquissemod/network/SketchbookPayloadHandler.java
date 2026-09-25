@@ -122,7 +122,8 @@ public class SketchbookPayloadHandler {
         // Ищем в основном инвентаре
         for (ItemStack stack : player.getInventory().items) {
             if (stack.is(toolItem)) {
-                stack.hurtAndBreak(damageAmount, level, (ServerPlayer) player, p -> {});
+                stack.hurtAndBreak(damageAmount, level, (ServerPlayer) player, p -> {
+                });
                 return;
             }
             if (damageInPencilCase(stack, toolItem, damageAmount, level, player)) return;
@@ -131,7 +132,8 @@ public class SketchbookPayloadHandler {
         // Ищем во второй руке
         for (ItemStack stack : player.getInventory().offhand) {
             if (stack.is(toolItem)) {
-                stack.hurtAndBreak(damageAmount, level, (ServerPlayer) player, p -> {});
+                stack.hurtAndBreak(damageAmount, level, (ServerPlayer) player, p -> {
+                });
                 return;
             }
             if (damageInPencilCase(stack, toolItem, damageAmount, level, player)) return;
@@ -152,7 +154,8 @@ public class SketchbookPayloadHandler {
                     ItemStack innerStack = items.get(i);
                     if (innerStack.is(toolItem)) {
                         // Наносим урон предмету (игра сама удалит предмет, если он сломался окончательно)
-                        innerStack.hurtAndBreak(damageAmount, level, (ServerPlayer) player, p -> {});
+                        innerStack.hurtAndBreak(damageAmount, level, (ServerPlayer) player, p -> {
+                        });
                         items.set(i, innerStack);
                         foundAndDamaged = true;
                         break;
@@ -260,6 +263,32 @@ public class SketchbookPayloadHandler {
                                 return;
                             }
                         }
+                    }
+                }
+            }
+        });
+    }
+
+    public void handlePrinterAction(final PrinterActionPayload payload, final net.neoforged.neoforge.network.handling.IPayloadContext context) {
+        context.enqueueWork(() -> {
+            Player player = context.player();
+            if (player.containerMenu instanceof net.avizvul.esquissemod.menu.PrinterMenu printerMenu) {
+                net.neoforged.neoforge.items.IItemHandler inv = printerMenu.getInventory();
+                ItemStack sourcePage = inv.getStackInSlot(0); // Слот 0: Оригинал
+                ItemStack paper = inv.getStackInSlot(1);      // Слот 1: Бумага
+                ItemStack outputSlot = inv.getStackInSlot(2); // Слот 2: Результат
+                // Проверяем наличие оригинала с рисунком, бумаги и пустого слота вывода
+                if (!sourcePage.isEmpty() && sourcePage.is(ModItems.SKETCHED_PAGE.get())
+                        && !paper.isEmpty() && (paper.is(ModItems.EMPTY_PAGE.get()) || paper.is(net.minecraft.world.item.Items.PAPER))
+                        && outputSlot.isEmpty()) {
+                    SketchData sketchData = sourcePage.get(ModDataComponents.PAGE_DATA.get());
+                    if (sketchData != null && !sketchData.isEmpty()) {
+                        // Создаем новый предмет страницы и копируем в него данные рисунка
+                        ItemStack printedPage = new ItemStack(ModItems.SKETCHED_PAGE.get());
+                        printedPage.set(ModDataComponents.PAGE_DATA.get(), sketchData);
+                        // Тратим 1 лист бумаги и помещаем результат в выходной слот
+                        paper.shrink(1);
+                        inv.insertItem(2, printedPage, false);
                     }
                 }
             }

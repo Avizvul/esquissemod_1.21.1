@@ -33,10 +33,14 @@ public class ModItems {
 
                 // Если карандаш длиннее/шире, просто переопределяем методы:
                 @Override
-                public int getGuiWidth() { return 16; } // Например, оставим 16
+                public int getGuiWidth() {
+                    return 16;
+                } // Например, оставим 16
 
                 @Override
-                public int getPeekHeight() { return 12; } // Пусть обычный карандаш выглядывает сильнее!
+                public int getPeekHeight() {
+                    return 12;
+                } // Пусть обычный карандаш выглядывает сильнее!
             });
 
     public static final DeferredItem<Item> ERASER = ITEMS.register("eraser",
@@ -48,7 +52,9 @@ public class ModItems {
                 }
 
                 @Override
-                public int getPeekHeight() { return 6; } // А ластик пусть торчит поменьше
+                public int getPeekHeight() {
+                    return 6;
+                } // А ластик пусть торчит поменьше
             });
 
     public static final DeferredItem<Item> KNEADED_ERASER = ITEMS.register("kneaded_eraser",
@@ -59,8 +65,11 @@ public class ModItems {
                 public net.minecraft.resources.ResourceLocation getGuiTexture() {
                     return net.minecraft.resources.ResourceLocation.fromNamespaceAndPath(net.avizvul.esquissemod.EsquisseMod.MOD_ID, "textures/gui/button_kneaded_eraser.png");
                 }
+
                 @Override
-                public int getPeekHeight() { return 6; }
+                public int getPeekHeight() {
+                    return 6;
+                }
             });
 
     public static final DeferredItem<Item> COLOR_PENCIL = ITEMS.register("color_pencil",
@@ -89,8 +98,11 @@ public class ModItems {
                 public net.minecraft.resources.ResourceLocation getGuiTexture() {
                     return net.minecraft.resources.ResourceLocation.fromNamespaceAndPath(net.avizvul.esquissemod.EsquisseMod.MOD_ID, "textures/gui/button_blender.png");
                 }
+
                 @Override
-                public int getPeekHeight() { return 10; }
+                public int getPeekHeight() {
+                    return 10;
+                }
             });
 
     public static final DeferredItem<Item> EMPTY_PAGE = ITEMS.register("empty_page",
@@ -113,7 +125,12 @@ public class ModItems {
     public static final DeferredItem<Item> MAGNIFYING_GLASS = ITEMS.register("magnifying_glass",
             () -> new Item(new Item.Properties().stacksTo(1)));
 
-    public static void register(IEventBus eventBus){
+    public static final DeferredItem<Item> PRINTER = ITEMS.register("printer",
+            () -> new net.minecraft.world.item.BlockItem(
+                    ModBlocks.PRINTER_BLOCK.get(),
+                    new Item.Properties()));
+
+    public static void register(IEventBus eventBus) {
         ITEMS.register(eventBus);
     }
 
@@ -122,7 +139,7 @@ public class ModItems {
         java.util.List<net.avizvul.esquissemod.component.SketchData> list = new java.util.ArrayList<>(count);
         for (int i = 0; i < count; i++) {
             // ИСПРАВЛЕНИЕ: Добавлены пробелы в [ 126 ][ 192 ]
-            int[][] emptyPixels = new int[ 126 ][ 192 ];
+            int[][] emptyPixels = new int[126][192];
             list.add(net.avizvul.esquissemod.component.SketchData.fromArray(emptyPixels));
         }
         return list;

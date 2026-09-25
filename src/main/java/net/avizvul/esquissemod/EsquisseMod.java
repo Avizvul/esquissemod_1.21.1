@@ -99,6 +99,12 @@ public class EsquisseMod {
                 net.avizvul.esquissemod.network.ToolSettingsPayload.STREAM_CODEC,
                 handler::handleToolSettings
         );
+
+        registrar.playToServer(
+                net.avizvul.esquissemod.network.PrinterActionPayload.TYPE,
+                net.avizvul.esquissemod.network.PrinterActionPayload.STREAM_CODEC,
+                handler::handlePrinterAction
+        );
     }
 
     private void commonSetup(FMLCommonSetupEvent event) {

@@ -2,7 +2,6 @@ package net.avizvul.esquissemod.block;
 
 import net.avizvul.esquissemod.EsquisseMod;
 import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.SoundType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.registries.DeferredBlock;
@@ -18,15 +17,6 @@ public class ModBlocks {
                     .noOcclusion()
                     .instabreak()
                     .sound(net.minecraft.world.level.block.SoundType.WOOL
-                    )
-            )
-    );
-
-    public static final DeferredBlock<Block> PRINTER_BLOCK = BLOCKS.register("printer",
-            () -> new PrinterBlock(BlockBehaviour.Properties.of()
-                    .strength(2.5f)
-                    .noOcclusion()
-                    .sound(SoundType.WOOD
                     )
             )
     );

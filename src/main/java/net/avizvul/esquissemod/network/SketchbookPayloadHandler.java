@@ -3,14 +3,11 @@ package net.avizvul.esquissemod.network;
 import net.avizvul.esquissemod.component.ModDataComponents;
 import net.avizvul.esquissemod.component.SketchData;
 import net.avizvul.esquissemod.item.ModItems;
-import net.avizvul.esquissemod.menu.PrinterMenu;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
-import net.neoforged.neoforge.items.IItemHandler;
-import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -125,8 +122,7 @@ public class SketchbookPayloadHandler {
         // Ищем в основном инвентаре
         for (ItemStack stack : player.getInventory().items) {
             if (stack.is(toolItem)) {
-                stack.hurtAndBreak(damageAmount, level, (ServerPlayer) player, p -> {
-                });
+                stack.hurtAndBreak(damageAmount, level, (ServerPlayer) player, p -> {});
                 return;
             }
             if (damageInPencilCase(stack, toolItem, damageAmount, level, player)) return;
@@ -135,8 +131,7 @@ public class SketchbookPayloadHandler {
         // Ищем во второй руке
         for (ItemStack stack : player.getInventory().offhand) {
             if (stack.is(toolItem)) {
-                stack.hurtAndBreak(damageAmount, level, (ServerPlayer) player, p -> {
-                });
+                stack.hurtAndBreak(damageAmount, level, (ServerPlayer) player, p -> {});
                 return;
             }
             if (damageInPencilCase(stack, toolItem, damageAmount, level, player)) return;
@@ -157,8 +152,7 @@ public class SketchbookPayloadHandler {
                     ItemStack innerStack = items.get(i);
                     if (innerStack.is(toolItem)) {
                         // Наносим урон предмету (игра сама удалит предмет, если он сломался окончательно)
-                        innerStack.hurtAndBreak(damageAmount, level, (ServerPlayer) player, p -> {
-                        });
+                        innerStack.hurtAndBreak(damageAmount, level, (ServerPlayer) player, p -> {});
                         items.set(i, innerStack);
                         foundAndDamaged = true;
                         break;
@@ -179,12 +173,15 @@ public class SketchbookPayloadHandler {
         context.enqueueWork(() -> {
             net.minecraft.world.entity.player.Player player = context.player();
 
-            // Ищем цветной карандаш везде: в руках, в инвентаре и внутри пенала
+            // Определяем, маркер это или карандаш
+            net.minecraft.world.item.Item targetItem = payload.isMarker() ? net.avizvul.esquissemod.item.ModItems.COLOR_MARKER.get() : net.avizvul.esquissemod.item.ModItems.COLOR_PENCIL.get();
+
+            // Ищем инструмент везде: в руках, в инвентаре и внутри пенала
             for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
                 net.minecraft.world.item.ItemStack stack = player.getInventory().getItem(i);
 
                 // Если нашли просто в инвентаре:
-                if (stack.is(net.avizvul.esquissemod.item.ModItems.COLOR_PENCIL.get())) {
+                if (stack.is(targetItem)) {
                     stack.set(net.avizvul.esquissemod.component.ModDataComponents.ACTIVE_COLOR_INDEX.get(), payload.colorIndex());
                     return;
                 }
@@ -197,7 +194,7 @@ public class SketchbookPayloadHandler {
                         contents.copyInto(items);
                         for (int j = 0; j < items.size(); j++) {
                             net.minecraft.world.item.ItemStack innerStack = items.get(j);
-                            if (innerStack.is(net.avizvul.esquissemod.item.ModItems.COLOR_PENCIL.get())) {
+                            if (innerStack.is(targetItem)) {
                                 innerStack.set(net.avizvul.esquissemod.component.ModDataComponents.ACTIVE_COLOR_INDEX.get(), payload.colorIndex());
                                 // Упаковываем обновленный инвентарь обратно в пенал!
                                 stack.set(net.minecraft.core.component.DataComponents.CONTAINER, net.minecraft.world.item.component.ItemContainerContents.fromItems(items));
@@ -210,25 +207,62 @@ public class SketchbookPayloadHandler {
         });
     }
 
-    public void handlePrinterAction(final PrinterActionPayload payload, final IPayloadContext context) {
+    public void handleToolSettings(final ToolSettingsPayload payload, final net.neoforged.neoforge.network.handling.IPayloadContext context) {
         context.enqueueWork(() -> {
-            Player player = context.player();
-            if (player.containerMenu instanceof PrinterMenu printerMenu) {
-                IItemHandler inv = printerMenu.getInventory();
-                ItemStack sourcePage = inv.getStackInSlot(0);
-                ItemStack paper = inv.getStackInSlot(1);
-                ItemStack outputSlot = inv.getStackInSlot(2);
-                if (!sourcePage.isEmpty() && sourcePage.is(ModItems.SKETCHED_PAGE.get()) && !paper.isEmpty() && (paper.is(ModItems.EMPTY_PAGE.get()) || paper.is(net.minecraft.world.item.Items.PAPER)) && outputSlot.isEmpty()) {
-                    SketchData sketchData = sourcePage.get(ModDataComponents.PAGE_DATA.get());
-                    if (sketchData != null && !sketchData.isEmpty()) {
-                        ItemStack printedPage = new ItemStack(ModItems.SKETCHED_PAGE.get());
-                        printedPage.set(ModDataComponents.PAGE_DATA.get(), sketchData);
-                        paper.shrink(1);
-                        inv.insertItem(2, printedPage, false);
+            net.minecraft.world.entity.player.Player player = context.player();
+
+            // Определяем, какой инструмент обновляем
+            net.minecraft.world.item.Item targetItem = switch (payload.toolType()) {
+                case 0 -> ModItems.PENCIL.get();
+                case 1 -> ModItems.COLOR_PENCIL.get();
+                case 2 -> ModItems.ERASER.get();
+                case 3 -> ModItems.SMUDGE.get();
+                case 4 -> ModItems.KNEADED_ERASER.get();
+                case 5 -> ModItems.COLOR_MARKER.get(); // МАРКЕР
+                default -> null;
+            };
+
+            if (targetItem == null) return;
+
+            // Ищем инструмент (как мы делали с цветом)
+            for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
+                net.minecraft.world.item.ItemStack stack = player.getInventory().getItem(i);
+
+                // 1. Нашли напрямую в инвентаре (переменная называется stack)
+                if (stack.is(targetItem)) {
+                    stack.set(ModDataComponents.BRUSH_SIZE.get(), payload.size());
+                    stack.set(ModDataComponents.BRUSH_HARDNESS.get(), payload.hardness());
+                    // Сохраняем угол поворота, если это маркер
+                    if (targetItem == ModItems.COLOR_MARKER.get()) {
+                        stack.set(ModDataComponents.MARKER_ROTATION.get(), payload.rotation());
+                    }
+                    return;
+                }
+
+                // 2. Проверка внутри пенала (а вот тут переменная называется innerStack)
+                if (stack.is(ModItems.PENCIL_CASE.get()) && stack.has(net.minecraft.core.component.DataComponents.CONTAINER)) {
+                    net.minecraft.world.item.component.ItemContainerContents contents = stack.get(net.minecraft.core.component.DataComponents.CONTAINER);
+                    if (contents != null) {
+                        net.minecraft.core.NonNullList<net.minecraft.world.item.ItemStack> items = net.minecraft.core.NonNullList.withSize(9, net.minecraft.world.item.ItemStack.EMPTY);
+                        contents.copyInto(items);
+                        for (int j = 0; j < items.size(); j++) {
+                            net.minecraft.world.item.ItemStack innerStack = items.get(j);
+
+                            if (innerStack.is(targetItem)) {
+                                innerStack.set(ModDataComponents.BRUSH_SIZE.get(), payload.size());
+                                innerStack.set(ModDataComponents.BRUSH_HARDNESS.get(), payload.hardness());
+                                // Сохраняем угол поворота, если это маркер
+                                if (targetItem == ModItems.COLOR_MARKER.get()) {
+                                    innerStack.set(ModDataComponents.MARKER_ROTATION.get(), payload.rotation());
+                                }
+                                // Перепаковываем обновленный список в пенал
+                                stack.set(net.minecraft.core.component.DataComponents.CONTAINER, net.minecraft.world.item.component.ItemContainerContents.fromItems(items));
+                                return;
+                            }
+                        }
                     }
                 }
             }
         });
     }
-
 }

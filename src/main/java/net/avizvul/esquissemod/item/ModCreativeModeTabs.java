@@ -20,13 +20,16 @@ public class ModCreativeModeTabs {
                     .title(Component.translatable("creativetab.esquissemod.art_supplies"))
                     .displayItems((itemDisplayParameters, output) -> {
                         output.accept(ModItems.SKETCHBOOK);
+                        output.accept(ModItems.PENCIL_CASE);
                         output.accept(ModItems.PENCIL);
                         output.accept(ModItems.ERASER);
-                        output.accept(ModItems.COLOR_PENCIL); // Это добавит обычный (пустой) карандаш
+                        output.accept(ModItems.KNEADED_ERASER);
+                        output.accept(ModItems.COLOR_PENCIL);
+                        output.accept(ModItems.COLOR_MARKER);
                         output.accept(ModItems.RULER);
                         output.accept(ModItems.MAGNIFYING_GLASS);
-                        output.accept(ModItems.PENCIL_CASE);
-                        output.accept(ModItems.PRINTER);
+                        output.accept(ModItems.SMUDGE);
+                        output.accept(ModItems.DRAWING_COMPASS);
 
                         // --- НОВОЕ: Полностью заполненный цветной карандаш ---
                         ItemStack fullColorPencil = new ItemStack(ModItems.COLOR_PENCIL.get());
@@ -42,6 +45,11 @@ public class ModCreativeModeTabs {
                         // Добавляем готовый предмет во вкладку
                         output.accept(fullColorPencil);
                         // -----------------------------------------------------
+
+                        ItemStack fullMarker = new ItemStack(ModItems.COLOR_MARKER.get());
+                        fullMarker.set(net.avizvul.esquissemod.component.ModDataComponents.STORED_COLORS.get(), allColors);
+                        fullMarker.set(net.avizvul.esquissemod.component.ModDataComponents.ACTIVE_COLOR_INDEX.get(), 0);
+                        output.accept(fullMarker);
 
                     }).build());
     public static void register(IEventBus eventBus) {

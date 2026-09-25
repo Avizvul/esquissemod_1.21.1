@@ -1,11 +1,9 @@
 package net.avizvul.esquissemod.client;
 
 import net.avizvul.esquissemod.EsquisseMod;
-import net.avizvul.esquissemod.client.screen.PrinterScreen;
 import net.avizvul.esquissemod.client.tooltip.ClientSketchedPageTooltip;
 import net.avizvul.esquissemod.client.tooltip.SketchedPageTooltipData;
 import net.avizvul.esquissemod.item.ModItems;
-import net.avizvul.esquissemod.menu.ModMenuTypes;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
@@ -47,7 +45,8 @@ public class ClientModEvents {
 
             // Для деревянного корпуса (layer0) возвращаем -1, чтобы игра его не фильтровала
             return -1;
-        }, net.avizvul.esquissemod.item.ModItems.COLOR_PENCIL.get());
+        }, net.avizvul.esquissemod.item.ModItems.COLOR_PENCIL.get(), net.avizvul.esquissemod.item.ModItems.COLOR_MARKER.get());
+
     }
 
     @SubscribeEvent
@@ -59,6 +58,5 @@ public class ClientModEvents {
     @SubscribeEvent
     public static void registerScreens(net.neoforged.neoforge.client.event.RegisterMenuScreensEvent event) {
         event.register(net.avizvul.esquissemod.menu.ModMenuTypes.PENCIL_CASE_MENU.get(), net.avizvul.esquissemod.client.screen.PencilCaseScreen::new);
-        event.register(net.avizvul.esquissemod.menu.ModMenuTypes.PRINTER_MENU.get(), net.avizvul.esquissemod.client.screen.PrinterScreen::new);
     }
 }

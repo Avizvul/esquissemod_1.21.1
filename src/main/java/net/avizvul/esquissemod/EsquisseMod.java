@@ -95,6 +95,12 @@ public class EsquisseMod {
                 net.avizvul.esquissemod.network.ChangeColorPayload.STREAM_CODEC,
                 handler::handleChangeColor
         );
+
+        registrar.playToServer(
+                net.avizvul.esquissemod.network.PrinterActionPayload.TYPE,
+                net.avizvul.esquissemod.network.PrinterActionPayload.STREAM_CODEC,
+                handler::handlePrinterAction
+        );
     }
 
     private void commonSetup(FMLCommonSetupEvent event) {

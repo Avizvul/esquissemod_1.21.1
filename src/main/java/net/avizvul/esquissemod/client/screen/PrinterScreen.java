@@ -10,7 +10,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Inventory;
 import net.neoforged.neoforge.network.PacketDistributor;
 
-public class PrinterScreen extends AbstractContainerScreen{
+public class PrinterScreen extends AbstractContainerScreen<PrinterMenu> {
     private static final ResourceLocation TEXTURE = ResourceLocation.fromNamespaceAndPath(EsquisseMod.MOD_ID, "textures/gui/printer_gui.png");
 
     public PrinterScreen(PrinterMenu menu, Inventory playerInventory, Component title) {
@@ -31,18 +31,14 @@ public class PrinterScreen extends AbstractContainerScreen{
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (button == 0) { // ЛКМ
+        if (button == 0) {
             int x = (this.width - this.imageWidth) / 2;
             int y = (this.height - this.imageHeight) / 2;
-
-            // Зона стрелки-кнопки (находится в промежутке между X=80 и X=116)
             int btnX = x + 82;
             int btnY = y + 15;
             int btnWidth = 30;
             int btnHeight = 18;
-
             if (mouseX >= btnX && mouseX < btnX + btnWidth && mouseY >= btnY && mouseY < btnY + btnHeight) {
-                // Отправляем сигнал печати/экспорта на сервер
                 PacketDistributor.sendToServer(new PrinterActionPayload(this.menu.getPos()));
                 return true;
             }

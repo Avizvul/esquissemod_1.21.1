@@ -3,11 +3,13 @@ package net.avizvul.esquissemod.network;
 import net.avizvul.esquissemod.component.ModDataComponents;
 import net.avizvul.esquissemod.component.SketchData;
 import net.avizvul.esquissemod.item.ModItems;
+import net.avizvul.esquissemod.menu.PrinterMenu;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import java.util.ArrayList;
@@ -123,7 +125,8 @@ public class SketchbookPayloadHandler {
         // Ищем в основном инвентаре
         for (ItemStack stack : player.getInventory().items) {
             if (stack.is(toolItem)) {
-                stack.hurtAndBreak(damageAmount, level, (ServerPlayer) player, p -> {});
+                stack.hurtAndBreak(damageAmount, level, (ServerPlayer) player, p -> {
+                });
                 return;
             }
             if (damageInPencilCase(stack, toolItem, damageAmount, level, player)) return;
@@ -132,7 +135,8 @@ public class SketchbookPayloadHandler {
         // Ищем во второй руке
         for (ItemStack stack : player.getInventory().offhand) {
             if (stack.is(toolItem)) {
-                stack.hurtAndBreak(damageAmount, level, (ServerPlayer) player, p -> {});
+                stack.hurtAndBreak(damageAmount, level, (ServerPlayer) player, p -> {
+                });
                 return;
             }
             if (damageInPencilCase(stack, toolItem, damageAmount, level, player)) return;
@@ -153,7 +157,8 @@ public class SketchbookPayloadHandler {
                     ItemStack innerStack = items.get(i);
                     if (innerStack.is(toolItem)) {
                         // Наносим урон предмету (игра сама удалит предмет, если он сломался окончательно)
-                        innerStack.hurtAndBreak(damageAmount, level, (ServerPlayer) player, p -> {});
+                        innerStack.hurtAndBreak(damageAmount, level, (ServerPlayer) player, p -> {
+                        });
                         items.set(i, innerStack);
                         foundAndDamaged = true;
                         break;
@@ -199,6 +204,27 @@ public class SketchbookPayloadHandler {
                                 return;
                             }
                         }
+                    }
+                }
+            }
+        });
+    }
+
+    public void handlePrinterAction(final PrinterActionPayload payload, final IPayloadContext context) {
+        context.enqueueWork(() -> {
+            Player player = context.player();
+            if (player.containerMenu instanceof PrinterMenu printerMenu) {
+                IItemHandler inv = printerMenu.getInventory();
+                ItemStack sourcePage = inv.getStackInSlot(0);
+                ItemStack paper = inv.getStackInSlot(1);
+                ItemStack outputSlot = inv.getStackInSlot(2);
+                if (!sourcePage.isEmpty() && sourcePage.is(ModItems.SKETCHED_PAGE.get()) && !paper.isEmpty() && (paper.is(ModItems.EMPTY_PAGE.get()) || paper.is(net.minecraft.world.item.Items.PAPER)) && outputSlot.isEmpty()) {
+                    SketchData sketchData = sourcePage.get(ModDataComponents.PAGE_DATA.get());
+                    if (sketchData != null && !sketchData.isEmpty()) {
+                        ItemStack printedPage = new ItemStack(ModItems.SKETCHED_PAGE.get());
+                        printedPage.set(ModDataComponents.PAGE_DATA.get(), sketchData);
+                        paper.shrink(1);
+                        inv.insertItem(2, printedPage, false);
                     }
                 }
             }

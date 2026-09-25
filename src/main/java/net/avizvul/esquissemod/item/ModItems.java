@@ -1,6 +1,7 @@
 package net.avizvul.esquissemod.item;
 
 import net.avizvul.esquissemod.EsquisseMod;
+import net.avizvul.esquissemod.block.ModBlocks;
 import net.avizvul.esquissemod.component.ModDataComponents; // Убедитесь, что импорт правильный для вашего компонента
 import net.avizvul.esquissemod.item.custom.ColorPencilItem;
 import net.avizvul.esquissemod.item.custom.PencilCaseItem;
@@ -45,10 +46,14 @@ public class ModItems {
 
                 // Если карандаш длиннее/шире, просто переопределяем методы:
                 @Override
-                public int getGuiWidth() { return 16; } // Например, оставим 16
+                public int getGuiWidth() {
+                    return 16;
+                } // Например, оставим 16
 
                 @Override
-                public int getPeekHeight() { return 12; } // Пусть обычный карандаш выглядывает сильнее!
+                public int getPeekHeight() {
+                    return 12;
+                } // Пусть обычный карандаш выглядывает сильнее!
             });
 
     public static final DeferredItem<Item> ERASER = ITEMS.register("eraser",
@@ -59,7 +64,9 @@ public class ModItems {
                 }
 
                 @Override
-                public int getPeekHeight() { return 6; } // А ластик пусть торчит поменьше
+                public int getPeekHeight() {
+                    return 6;
+                } // А ластик пусть торчит поменьше
             });
 
     public static final DeferredItem<Item> EMPTY_PAGE = ITEMS.register("empty_page",
@@ -74,6 +81,8 @@ public class ModItems {
     public static final DeferredItem<Item> MAGNIFYING_GLASS = ITEMS.register("magnifying_glass",
             () -> new Item(new Item.Properties().stacksTo(1)));
 
+    public static final DeferredItem<Item> PRINTER = ITEMS.register("printer",
+            () -> new net.minecraft.world.item.BlockItem(ModBlocks.PRINTER_BLOCK.get(), new Item.Properties()));
 
     public net.minecraft.resources.ResourceLocation getGuiTexture() {
         // Базовая текстура без цвета (цвет мы всё так же будем накладывать поверх неё в GUI)
@@ -81,7 +90,7 @@ public class ModItems {
     }
 
 
-    public static void register(IEventBus eventBus){
+    public static void register(IEventBus eventBus) {
         ITEMS.register(eventBus);
     }
 

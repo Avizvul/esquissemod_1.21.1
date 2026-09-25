@@ -15,6 +15,9 @@ public class ModBlockEntities {
     public static final Supplier<BlockEntityType<SketchedPageBlockEntity>> SKETCHED_PAGE_BE = BLOCK_ENTITIES.register("sketched_page_be",
             () -> BlockEntityType.Builder.of(SketchedPageBlockEntity::new, ModBlocks.SKETCHED_PAGE_BLOCK.get()).build(null));
 
+    public static final Supplier<BlockEntityType<PrinterBlockEntity>> PRINTER_BE = BLOCK_ENTITIES.register("printer_be",
+            () -> BlockEntityType.Builder.of(PrinterBlockEntity::new, ModBlocks.PRINTER_BLOCK.get()).build(null));
+
     public static void register(IEventBus eventBus) {
         BLOCK_ENTITIES.register(eventBus);
     }

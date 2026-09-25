@@ -1,0 +1,18 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "tool",
+  "ingredients": [
+    [
+      { "item": "minecraft:slime_ball" },
+      { "item": "minecraft:honey_bottle" },
+      { "item": "minecraft:honeycomb" }
+    ],
+    {
+      "item": "minecraft:bread"
+    }
+  ],
+  "result": {
+    "count": 1,
+    "id": "esquissemod:eraser"
+  }
+}

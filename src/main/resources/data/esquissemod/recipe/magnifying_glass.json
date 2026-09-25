@@ -1,0 +1,21 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "tool",
+  "key": {
+    "C": {
+      "item": "minecraft:copper_ingot"
+    },
+    "G": {
+      "item": "minecraft:glass"
+    }
+  },
+  "pattern": [
+    "  G",
+    " C ",
+    "C  "
+  ],
+  "result": {
+    "count": 1,
+    "id": "esquissemod:magnifying_glass"
+  }
+}

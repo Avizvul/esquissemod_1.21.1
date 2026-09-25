@@ -23,7 +23,7 @@ public class ModBlocks {
     );
 
     public static final DeferredBlock<Block> PRINTER_BLOCK = BLOCKS.register("printer",
-            () -> new SketchedPageBlock(BlockBehaviour.Properties.of()
+            () -> new PrinterBlock(BlockBehaviour.Properties.of()
                     .noOcclusion()
                     .strength(2.5f)
                     .sound(SoundType.WOOD

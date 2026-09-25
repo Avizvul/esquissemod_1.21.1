@@ -58,5 +58,6 @@ public class ClientModEvents {
     @SubscribeEvent
     public static void registerScreens(net.neoforged.neoforge.client.event.RegisterMenuScreensEvent event) {
         event.register(net.avizvul.esquissemod.menu.ModMenuTypes.PENCIL_CASE_MENU.get(), net.avizvul.esquissemod.client.screen.PencilCaseScreen::new);
+        event.register(net.avizvul.esquissemod.menu.ModMenuTypes.PRINTER_MENU.get(), net.avizvul.esquissemod.client.screen.PrinterScreen::new);
     }
 }

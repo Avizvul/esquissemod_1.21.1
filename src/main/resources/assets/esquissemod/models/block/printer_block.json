@@ -1,7 +1,7 @@
 {
   "parent": "minecraft:block/cube",
   "textures": {
-    "particle": "esquissemod:block/printer_front",
+    "particle": "esquissemod:block/printer_north",
     "up": "esquissemod:block/printer_top",
     "down": "esquissemod:block/printer_bottom",
     "north": "esquissemod:block/printer_north",

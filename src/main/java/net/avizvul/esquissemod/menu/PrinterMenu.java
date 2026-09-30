@@ -77,7 +77,7 @@ public class PrinterMenu extends AbstractContainerMenu {
         this.addSlot(new SlotItemHandler(handler, 7, 116, 42) {
             @Override
             public boolean mayPlace(ItemStack stack) {
-                return stack.is(Items.REDSTONE) || stack.is(Items.GLOWSTONE_DUST);
+                return stack.is(Items.ENDER_PEARL) || stack.is(Items.GLOWSTONE_DUST);
             }
         });
         // Инвентарь игрока (3x9)

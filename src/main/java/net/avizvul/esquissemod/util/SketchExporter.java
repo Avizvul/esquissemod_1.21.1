@@ -16,25 +16,27 @@ public class SketchExporter {
 
         int[][] pixels = sketchData.getRawPixels();
         int width = pixels.length;
-        int height = pixels[ 0 ].length;
+        int height = pixels.length;
 
         // Создаем изображение NativeImage в формате RGBA
         NativeImage image = new NativeImage(width, height, false);
 
+        int whiteBg = 0xFFFFFFFF; // Белый цвет фона бумаги (100% непрозрачный белый)
+
         for (int x = 0; x < width; x++) {
             for (int y = 0; y < height; y++) {
-                int argb = pixels[ x ][ y ];
-                if (argb != 0) {
-                    int a = (argb >> 24) & 0xFF;
-                    int r = (argb >> 16) & 0xFF;
-                    int g = (argb >> 8) & 0xFF;
-                    int b = argb & 0xFF;
-                    // NativeImage принимает ABGR
-                    image.setPixelRGBA(x, y, (a << 24) | (b << 16) | (g << 8) | r);
-                } else {
-                    // Прозрачный/белый фон для бумаги
-                    image.setPixelRGBA(x, y, 0xFFFFFFFF);
-                }
+                int argb = pixels[x][y];
+
+                // Накладываем цвет пикселя на белый фон с учётом прозрачности (Alpha Blending)
+                int blended = ColorUtils.blendColors(whiteBg, argb);
+
+                int a = (blended >> 24) & 0xFF;
+                int r = (blended >> 16) & 0xFF;
+                int g = (blended >> 8) & 0xFF;
+                int b = blended & 0xFF;
+
+                // NativeImage использует формат ABGR
+                image.setPixelRGBA(x, y, (a << 24) | (b << 16) | (g << 8) | r);
             }
         }
 

@@ -170,96 +170,79 @@ public class SketchbookPayloadHandler {
         });
     }
 
-    // --- 5. ОБРАБОТКА ПЕЧАТИ В ПРИНТЕРЕ (БУМАГА, КАТАЛИЗАТОРЫ, CMYK И ЗВУКИ) ---
-    public void handlePrinterAction(final PrinterActionPayload payload, final IPayloadContext context) {
+    // --- 5. ОБРАБОТКА ДЕЙСТВИЯ ПРИНТЕРА ---
+    public void handlePrinterAction(final PrinterActionPayload payload, final net.neoforged.neoforge.network.handling.IPayloadContext context) {
         context.enqueueWork(() -> {
             Player player = context.player();
             if (player.containerMenu instanceof PrinterMenu printerMenu) {
                 IItemHandler inv = printerMenu.getInventory();
 
-                ItemStack sourcePage = inv.getStackInSlot(0); // Слот 0: Оригинал
-                ItemStack paper = inv.getStackInSlot(1);      // Слот 1: Бумага
-                ItemStack outputSlot = inv.getStackInSlot(2); // Слот 2: Результат
+                ItemStack sourcePage = inv.getStackInSlot(0);
+                ItemStack paper = inv.getStackInSlot(1);
+                ItemStack outputSlot = inv.getStackInSlot(2);
 
-                ItemStack cyanDye = inv.getStackInSlot(3);    // Слот 3: Cyan
-                ItemStack magentaDye = inv.getStackInSlot(4); // Слот 4: Magenta
-                ItemStack yellowDye = inv.getStackInSlot(5);  // Слот 5: Yellow
-                ItemStack blackDye = inv.getStackInSlot(6);   // Слот 6: Black
-                ItemStack catalyst = inv.getStackInSlot(7);   // Слот 7: Катализатор (Редстоун / Глоустоун / Жемчуг Эндера)
+                ItemStack cyanDye = inv.getStackInSlot(3);
+                ItemStack magentaDye = inv.getStackInSlot(4);
+                ItemStack yellowDye = inv.getStackInSlot(5);
+                ItemStack blackDye = inv.getStackInSlot(6);
+                ItemStack catalyst = inv.getStackInSlot(7);
 
-                boolean hasPaper = !paper.isEmpty() && (paper.is(ModItems.EMPTY_PAGE.get()) || paper.is(Items.PAPER));
-                boolean hasCatalyst = !catalyst.isEmpty() && (
-                        catalyst.is(Items.REDSTONE) ||
-                                catalyst.is(Items.GLOWSTONE_DUST) ||
-                                catalyst.is(Items.ENDER_PEARL)
-                );
+                if (sourcePage.isEmpty() || !sourcePage.is(ModItems.SKETCHED_PAGE.get())) return;
 
-                if (!sourcePage.isEmpty() && sourcePage.is(ModItems.SKETCHED_PAGE.get())
-                        && hasPaper && hasCatalyst && outputSlot.isEmpty()) {
+                SketchData sketchData = sourcePage.get(ModDataComponents.PAGE_DATA.get());
+                if (sketchData == null || sketchData.isEmpty()) return;
 
-                    SketchData sketchData = sourcePage.get(ModDataComponents.PAGE_DATA.get());
-                    if (sketchData != null && !sketchData.isEmpty()) {
+                boolean isEnderPearl = !catalyst.isEmpty() && catalyst.is(Items.ENDER_PEARL);
+                boolean isPaperCatalyst = !catalyst.isEmpty() && (catalyst.is(Items.REDSTONE) || catalyst.is(Items.GLOWSTONE_DUST));
 
-                        boolean needsCyan = false;
-                        boolean needsMagenta = false;
-                        boolean needsYellow = false;
-                        boolean needsBlack = false;
+                if (!isEnderPearl && !isPaperCatalyst) return;
 
-                        int[][] pixels = sketchData.getRawPixels();
-                        for (int x = 0; x < pixels.length; x++) {
-                            for (int y = 0; y < pixels[x].length; y++) {
-                                int argb = pixels[x][y];
-                                if (argb != 0) {
-                                    int r = (argb >> 16) & 0xFF;
-                                    int g = (argb >> 8) & 0xFF;
-                                    int b = argb & 0xFF;
+                if (isPaperCatalyst) {
+                    boolean hasPaper = !paper.isEmpty() && (paper.is(ModItems.EMPTY_PAGE.get()) || paper.is(Items.PAPER));
+                    if (!hasPaper || !outputSlot.isEmpty()) return;
+                }
 
-                                    if (r < 80 && g < 80 && b < 80) {
-                                        needsBlack = true;
-                                    } else {
-                                        if (b > r && b > g) needsCyan = true;
-                                        if (r > g && b > g) needsMagenta = true;
-                                        if (r > b && g > b) needsYellow = true;
-                                    }
-                                }
-                            }
-                        }
+                // Проверяем наличие ВСЕХ четырёх красителей (CMYK)
+                boolean hasAllDyes = !cyanDye.isEmpty()
+                        && !magentaDye.isEmpty()
+                        && !yellowDye.isEmpty()
+                        && !blackDye.isEmpty();
 
-                        boolean dyesSatisfied = (!needsCyan || !cyanDye.isEmpty())
-                                && (!needsMagenta || !magentaDye.isEmpty())
-                                && (!needsYellow || !yellowDye.isEmpty())
-                                && (!needsBlack || !blackDye.isEmpty());
+                if (!hasAllDyes) return;
 
-                        if (dyesSatisfied) {
-                            ItemStack printedPage = new ItemStack(ModItems.SKETCHED_PAGE.get());
-                            printedPage.set(ModDataComponents.PAGE_DATA.get(), sketchData);
+                // Списываем катализатор и ВСЕ красители по 1 шт.
+                catalyst.shrink(1);
+                cyanDye.shrink(1);
+                magentaDye.shrink(1);
+                yellowDye.shrink(1);
+                blackDye.shrink(1);
 
-                            paper.shrink(1);
-                            catalyst.shrink(1);
-
-                            if (needsCyan && !cyanDye.isEmpty()) cyanDye.shrink(1);
-                            if (needsMagenta && !magentaDye.isEmpty()) magentaDye.shrink(1);
-                            if (needsYellow && !yellowDye.isEmpty()) yellowDye.shrink(1);
-                            if (needsBlack && !blackDye.isEmpty()) blackDye.shrink(1);
-
-                            inv.insertItem(2, printedPage, false);
-
-                            if (catalyst.is(Items.ENDER_PEARL)) {
-                                player.level().playSound(null, player.blockPosition(), SoundEvents.ENDERMAN_TELEPORT, SoundSource.BLOCKS, 0.6f, 1.2f);
-                            } else {
-                                player.level().playSound(null, player.blockPosition(), SoundEvents.BOOK_PAGE_TURN, SoundSource.BLOCKS, 1.0f, 1.0f);
-                            }
-                        }
+                if (isEnderPearl) {
+                    if (player instanceof ServerPlayer serverPlayer) {
+                        net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(
+                                serverPlayer,
+                                new ExportSketchPayload(sketchData)
+                        );
                     }
+                    player.level().playSound(null, player.blockPosition(), SoundEvents.ENDERMAN_TELEPORT, SoundSource.BLOCKS, 0.6f, 1.2f);
+                } else {
+                    paper.shrink(1);
+                    ItemStack printedPage = new ItemStack(ModItems.SKETCHED_PAGE.get());
+                    printedPage.set(ModDataComponents.PAGE_DATA.get(), sketchData);
+                    inv.insertItem(2, printedPage, false);
+
+                    player.level().playSound(null, player.blockPosition(), SoundEvents.BOOK_PAGE_TURN, SoundSource.BLOCKS, 1.0f, 1.0f);
                 }
             }
         });
+
     }
 
-    // --- ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ И ИЗНОС В ПЕНАЛЕ ---
+
+                // --- 6. ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ И ИЗНОС В ПЕНАЛЕ ---
     private static List<SketchData> createEmptyPages() {
         List<SketchData> pages = new ArrayList<>();
-        SketchData emptyData = SketchData.fromArray(new int);
+        SketchData emptyData = SketchData.fromArray(new int[3][4]);
         for (int i = 0; i < 16; i++) {
             pages.add(emptyData);
         }

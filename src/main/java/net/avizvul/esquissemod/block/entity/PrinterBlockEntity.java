@@ -16,7 +16,8 @@ import org.jetbrains.annotations.Nullable;
 
 public class PrinterBlockEntity extends BlockEntity implements MenuProvider {
     private final ItemStackHandler inventory = new ItemStackHandler(8) {
-        protected void onContentsChanged() {
+        @Override
+        protected void onContentsChanged(int slot) {
             setChanged();
         }
     };

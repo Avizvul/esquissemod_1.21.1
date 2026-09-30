@@ -131,6 +131,9 @@ public class ModItems {
                     ModBlocks.PRINTER_BLOCK.get(),
                     new Item.Properties()));
 
+    public static final DeferredItem<Item> WARP_ESSENCE = ITEMS.register("warp_essence",
+            () -> new Item(new Item.Properties().stacksTo(64)));
+
     public static void register(IEventBus eventBus) {
         ITEMS.register(eventBus);
     }

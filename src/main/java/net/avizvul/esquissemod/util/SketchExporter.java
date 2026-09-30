@@ -14,20 +14,24 @@ public class SketchExporter {
     public static void exportSketchToScreenshots(SketchData sketchData) {
         if (sketchData == null || sketchData.isEmpty()) return;
 
-        int[][] pixels = sketchData.getRawPixels();
-        int width = pixels.length;
-        int height = pixels.length;
+        // 1. Гарантируем точные размеры холста (126x192) независимо от исходного массива
+        int srcWidth = 126;
+        int srcHeight = 192;
+        int[][] pixels = sketchData.toArray(srcWidth, srcHeight);
 
-        // Создаем изображение NativeImage в формате RGBA
-        NativeImage image = new NativeImage(width, height, false);
+        // 2. Масштабируем картинку в 4 раза (504x768 px), чтобы файл был крупным и четким
+        int scale = 4;
+        int exportWidth = srcWidth * scale;
+        int exportHeight = srcHeight * scale;
 
-        int whiteBg = 0xFFFFFFFF; // Белый цвет фона бумаги (100% непрозрачный белый)
+        NativeImage image = new NativeImage(exportWidth, exportHeight, false);
+        int whiteBg = 0xFFFFFFFF; // Белый цвет бумаги (100% непрозрачный)
 
-        for (int x = 0; x < width; x++) {
-            for (int y = 0; y < height; y++) {
+        for (int x = 0; x < srcWidth; x++) {
+            for (int y = 0; y < srcHeight; y++) {
                 int argb = pixels[x][y];
 
-                // Накладываем цвет пикселя на белый фон с учётом прозрачности (Alpha Blending)
+                // 3. Смешиваем полупрозрачный пиксель с белым фоном бумаги (Alpha Blending)
                 int blended = ColorUtils.blendColors(whiteBg, argb);
 
                 int a = (blended >> 24) & 0xFF;
@@ -35,12 +39,18 @@ public class SketchExporter {
                 int g = (blended >> 8) & 0xFF;
                 int b = blended & 0xFF;
 
-                // NativeImage использует формат ABGR
-                image.setPixelRGBA(x, y, (a << 24) | (b << 16) | (g << 8) | r);
+                // NativeImage ожидает формат ABGR
+                int abgr = (a << 24) | (b << 16) | (g << 8) | r;
+
+                // 4. Заполняем увеличенный блок пикселей для масштаба 4x
+                for (int dx = 0; dx < scale; dx++) {
+                    for (int dy = 0; dy < scale; dy++) {
+                        image.setPixelRGBA(x * scale + dx, y * scale + dy, abgr);
+                    }
+                }
             }
         }
 
-        // Формируем имя файла с временной меткой
         String timeStamp = new SimpleDateFormat("yyyy-MM-dd_HH.mm.ss").format(new Date());
         File screenshotsDir = new File(Minecraft.getInstance().gameDirectory, "screenshots");
         if (!screenshotsDir.exists()) {

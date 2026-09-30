@@ -1,0 +1,22 @@
+{
+"item.esquissemod.sketchbook": "Скетчбук",
+"item.esquissemod.pencil": "Карандаш",
+"item.esquissemod.eraser": "Ластик",
+"item.esquissemod.empty_page": "Пустая страница",
+"item.esquissemod.sketched_page": "Зарисованная страница",
+"item.esquissemod.color_pencil": "Цветной карандаш",
+"item.esquissemod.empty_color_pencil": "Пустой цветной карандаш",
+"item.esquissemod.ruler": "Линейка",
+"item.esquissemod.pencil_case": "Пенал",
+"item.esquissemod.magnifying_glass": "Лупа",
+"item.esquissemod.smudge": "Растушевка",
+"item.esquissemod.kneaded_eraser": "Клячка",
+"item.esquissemod.drawing_compass": "Циркуль",
+"item.esquissemod.color_marker": "Цветной маркер",
+"item.esquissemod.empty_color_marker": "Пустой цветной маркер",
+"block.esquissemod.printer": "Принтер",
+"item.esquissemod.printer": "Принтер",
+"item.esquissemod.warp_essence": "Варп-эссенция",
+
+"creativetab.esquissemod.art_supplies": "Художественные принадлежности"
+}

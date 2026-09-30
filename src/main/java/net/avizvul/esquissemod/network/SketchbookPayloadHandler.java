@@ -192,10 +192,11 @@ public class SketchbookPayloadHandler {
                 SketchData sketchData = sourcePage.get(ModDataComponents.PAGE_DATA.get());
                 if (sketchData == null || sketchData.isEmpty()) return;
 
-                boolean isEnderPearl = !catalyst.isEmpty() && catalyst.is(Items.ENDER_PEARL);
-                boolean isPaperCatalyst = !catalyst.isEmpty() && (catalyst.is(Items.REDSTONE) || catalyst.is(Items.GLOWSTONE_DUST));
+                boolean isWarpEssence = !catalyst.isEmpty() && catalyst.is(ModItems.WARP_ESSENCE.get());
+                boolean isPaperCatalyst = !catalyst.isEmpty() && catalyst.is(Items.GLOWSTONE_DUST);
 
-                if (!isEnderPearl && !isPaperCatalyst) return;
+
+                if (!isWarpEssence && !isPaperCatalyst) return;
 
                 if (isPaperCatalyst) {
                     boolean hasPaper = !paper.isEmpty() && (paper.is(ModItems.EMPTY_PAGE.get()) || paper.is(Items.PAPER));
@@ -217,7 +218,7 @@ public class SketchbookPayloadHandler {
                 yellowDye.shrink(1);
                 blackDye.shrink(1);
 
-                if (isEnderPearl) {
+                if (isWarpEssence) {
                     if (player instanceof ServerPlayer serverPlayer) {
                         net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(
                                 serverPlayer,

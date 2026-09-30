@@ -32,7 +32,7 @@ public class PrinterBlockEntity extends BlockEntity implements MenuProvider {
 
     @Override
     public Component getDisplayName() {
-        return Component.translatable("block.esquissemod.printer");
+        return Component.translatable("block.esquissemod.printer_block");
     }
 
     @Nullable

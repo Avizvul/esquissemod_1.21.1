@@ -1,8 +1,8 @@
 {
   "variants": {
-    "facing=north": { "model": "esquissemod:block/printer" },
-    "facing=south": { "model": "esquissemod:block/printer", "y": 180 },
-    "facing=west":  { "model": "esquissemod:block/printer", "y": 270 },
-    "facing=east":  { "model": "esquissemod:block/printer", "y": 90 }
+    "facing=north": { "model": "esquissemod:block/printer_block", "y": 180 },
+    "facing=south": { "model": "esquissemod:block/printer_block" },
+    "facing=west":  { "model": "esquissemod:block/printer_block", "y": 90 },
+    "facing=east":  { "model": "esquissemod:block/printer_block", "y": 270 }
   }
 }

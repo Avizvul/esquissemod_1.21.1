@@ -126,7 +126,7 @@ public class ModItems {
     public static final DeferredItem<Item> MAGNIFYING_GLASS = ITEMS.register("magnifying_glass",
             () -> new Item(new Item.Properties().stacksTo(1)));
 
-    public static final DeferredItem<Item> PRINTER = ITEMS.register("printer",
+    public static final DeferredItem<Item> PRINTER = ITEMS.register("printer_block",
             () -> new net.minecraft.world.item.BlockItem(
                     ModBlocks.PRINTER_BLOCK.get(),
                     new Item.Properties()));

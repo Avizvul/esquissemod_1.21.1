@@ -14,8 +14,8 @@
   "item.esquissemod.drawing_compass": "Drawing Compass",
   "item.esquissemod.color_marker": "Color Marker",
   "item.esquissemod.empty_color_marker": "Empty Color Marker",
-  "block.esquissemod.printer": "Printer",
-  "item.esquissemod.printer": "Printer",
+  "block.esquissemod.printer_block": "Printer",
+  "item.esquissemod.printer_block": "Printer",
   "item.esquissemod.warp_essence": "Warp Essence",
 
   "creativetab.esquissemod.art_supplies": "Art Supplies"

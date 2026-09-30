@@ -22,7 +22,7 @@ public class ModBlocks {
             )
     );
 
-    public static final DeferredBlock<Block> PRINTER_BLOCK = BLOCKS.register("printer",
+    public static final DeferredBlock<Block> PRINTER_BLOCK = BLOCKS.register("printer_block",
             () -> new PrinterBlock(BlockBehaviour.Properties.of()
                     .noOcclusion()
                     .strength(2.5f)

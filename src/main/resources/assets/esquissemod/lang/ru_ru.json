@@ -14,8 +14,8 @@
 "item.esquissemod.drawing_compass": "Циркуль",
 "item.esquissemod.color_marker": "Цветной маркер",
 "item.esquissemod.empty_color_marker": "Пустой цветной маркер",
-"block.esquissemod.printer": "Принтер",
-"item.esquissemod.printer": "Принтер",
+"block.esquissemod.printer_block": "Принтер",
+"item.esquissemod.printer_block": "Принтер",
 "item.esquissemod.warp_essence": "Варп-эссенция",
 
 "creativetab.esquissemod.art_supplies": "Художественные принадлежности"

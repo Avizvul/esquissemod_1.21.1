@@ -31,10 +31,13 @@ public class PrinterScreen extends AbstractContainerScreen<PrinterMenu> {
     public PrinterScreen(PrinterMenu menu, Inventory playerInventory, Component title) {
         super(menu, playerInventory, title);
         this.imageWidth = 176;
-        this.imageHeight = 192; // Высота окна под новые координаты инвентаря
-        this.inventoryLabelY = 96; // Надпись "Инвентарь" прямо над слотами
+        this.imageHeight = 192;
+
+        // Позиционирование заголовка "Принтер" и подписи "Инвентарь"
         this.titleLabelX = 8;
         this.titleLabelY = 5;
+        this.inventoryLabelX = 8;
+        this.inventoryLabelY = 98;
     }
 
     @Override
@@ -44,8 +47,10 @@ public class PrinterScreen extends AbstractContainerScreen<PrinterMenu> {
 
         RenderSystem.enableBlend();
 
+        // 1. Основной фон GUI
         guiGraphics.blit(TEXTURE_GUI, x, y, 0, 0, this.imageWidth, this.imageHeight);
 
+        // 2. Отображение красителей CMYK (Слоты 3, 4, 5, 6)
         if (!this.menu.getSlot(3).getItem().isEmpty()) {
             guiGraphics.blit(TEXTURE_CYAN, x, y, 0, 0, this.imageWidth, this.imageHeight);
         }
@@ -59,6 +64,7 @@ public class PrinterScreen extends AbstractContainerScreen<PrinterMenu> {
             guiGraphics.blit(TEXTURE_BLACK, x, y, 0, 0, this.imageWidth, this.imageHeight);
         }
 
+        // 3. Отображение катализатора (Слот 7: Варп-Эссенция или Глоустоун/Редстоун)
         ItemStack catalystStack = this.menu.getSlot(7).getItem();
         if (!catalystStack.isEmpty()) {
             if (catalystStack.is(ModItems.WARP_ESSENCE.get())) {
@@ -68,6 +74,7 @@ public class PrinterScreen extends AbstractContainerScreen<PrinterMenu> {
             }
         }
 
+        // 4. Кнопка печати (Координаты: 113, 34 | Размер: 18x47)
         int btnX = x + 113;
         int btnY = y + 34;
         int btnWidth = 18;
@@ -83,6 +90,12 @@ public class PrinterScreen extends AbstractContainerScreen<PrinterMenu> {
         }
 
         RenderSystem.disableBlend();
+    }
+
+    @Override
+    protected void renderLabels(GuiGraphics guiGraphics, int mouseX, int mouseY) {
+        // Отрисовка названия блока и инвентаря стандартным тёмно-серым цветом (0x404040)
+        guiGraphics.drawString(this.font, this.playerInventoryTitle, this.inventoryLabelX, this.inventoryLabelY, 0x404040, false);
     }
 
     @Override

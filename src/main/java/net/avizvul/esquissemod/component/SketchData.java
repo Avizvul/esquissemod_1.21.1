@@ -23,6 +23,10 @@ public class SketchData {
     private final List<TextElement> textElements;
     private final int cachedHashCode;
 
+    // Стрим-кодек для списка текстовых элементов
+    private static final StreamCodec<ByteBuf, List<TextElement>> TEXT_LIST_CODEC =
+            ByteBufCodecs.collection(ArrayList::new, TextElement.STREAM_CODEC);
+
     // --- CODEC ДЛЯ СОХРАНЕНИЯ В NBT / ФАЙЛЫ МИРА ---
 
     private static final Codec<int[][]> PIXELS_CODEC = Codec.INT_STREAM.xmap(
@@ -90,8 +94,7 @@ public class SketchData {
                 }
 
                 // 2. Сетевая запись векторных текстовых элементов
-                ByteBufCodecs.collection(ArrayList::new, TextElement.STREAM_CODEC)
-                        .encode(buf, data.getTextElements());
+                TEXT_LIST_CODEC.encode(buf, data.getTextElements());
             },
             buf -> {
                 int w = 126;
@@ -121,8 +124,7 @@ public class SketchData {
                 }
 
                 // 2. Сетевое чтение векторных текстовых элементов
-                List<TextElement> texts = ByteBufCodecs.collection(ArrayList::new, TextElement.STREAM_CODEC)
-                        .decode(buf);
+                List<TextElement> texts = TEXT_LIST_CODEC.decode(buf);
 
                 return new SketchData(pixels2D, texts);
             }

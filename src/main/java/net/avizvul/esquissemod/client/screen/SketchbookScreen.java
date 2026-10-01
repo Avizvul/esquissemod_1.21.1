@@ -5,6 +5,7 @@ import net.avizvul.esquissemod.component.ModDataComponents;
 import net.avizvul.esquissemod.component.SketchData;
 import net.avizvul.esquissemod.item.ModItems;
 import net.avizvul.esquissemod.network.SketchbookSavePayload;
+import net.avizvul.esquissemod.network.TearPagePayload;
 import net.avizvul.esquissemod.util.ColorUtils;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
@@ -1181,6 +1182,12 @@ public class SketchbookScreen extends Screen {
                 (hasColorMarker && !getColorMarkerStack().getOrDefault(ModDataComponents.STORED_COLORS.get(), new java.util.ArrayList<>()).isEmpty());
 
         ToolButtonCoords toolCoords = getToolButtonCoords();
+
+        int renderX = (int) this.exactGuiLeft;
+        int renderY = (int) this.exactGuiTop;
+        int drawWidth = this.fileWidth * this.scale;
+
+        int canvasScreenLeft = renderX + ((this.frameWidth + this.deadZoneWidth) * this.scale);
         int scaledBtnWidth = toolCoords.scaledBtnWidth();
         int scaledBtnHeight = toolCoords.scaledBtnHeight();
         int pencilX = toolCoords.pencilX();
@@ -1193,14 +1200,33 @@ public class SketchbookScreen extends Screen {
         int magGlassX = toolCoords.magGlassX();
         int compassX = toolCoords.compassX();
         int peekY = toolCoords.peekY();
+        int btnFileWidth = 8;
+        int btnFileHeight = 8;
+        int btnX = renderX;
+        int btnY = renderY + ((this.fileHeight - btnFileHeight) / 2) * this.scale;
+        int baseY = this.height - (scaledBtnHeight / 2);
+        int pencilY = (this.activeTool == Tool.PENCIL) ? peekY : baseY;
+        int colorPencilY = (this.activeTool == Tool.COLOR_PENCIL) ? peekY : baseY;
+        int colorMarkerY = (this.activeTool == Tool.COLOR_MARKER) ? peekY : baseY;
+        int eraserY = (this.activeTool == Tool.ERASER) ? peekY : baseY;
+        int smudgeY = (this.activeTool == Tool.SMUDGE) ? peekY : baseY;
+        int kneadedY = (this.activeTool == Tool.KNEADED_ERASER) ? peekY : baseY;
+
+        TabCoords coords = getTabCoords(renderX, renderY, drawWidth);
+
+        int scaledTabWidth = this.tabWidth * this.tabScale;
+        int scaledTabHeight = this.tabHeight * this.tabScale;
+        int scaledFrameWidth = this.frameWidth * this.scale;
+        int scaledImageHeight = this.fileHeight * this.scale;
+        int scaledCanvasWidth = this.canvasWidth * this.scale;
+        int blueZoneWidth = this.deadZoneWidth * this.scale;
+        int blueZoneLeft = renderX + (this.frameWidth * this.scale);
+        int blueZoneTop = renderY;
+        int blueZoneBottom = renderY + (this.canvasHeight * this.scale);
 
         double[] logicalMouse = getLogicalMouse(mouseX, mouseY);
         double lMouseX = logicalMouse[0];
         double lMouseY = logicalMouse[1];
-
-        int renderX = (int) this.exactGuiLeft;
-        int renderY = (int) this.exactGuiTop;
-        int canvasScreenLeft = renderX + ((this.frameWidth + this.deadZoneWidth) * this.scale);
 
         // 1. Клик по кнопке "(Т)" над выбранным карандашом
         boolean isPencilSelected = (this.activeTool == Tool.PENCIL) || (this.activeTool == Tool.TEXT && this.previousDrawingTool == Tool.PENCIL);
@@ -1281,15 +1307,9 @@ public class SketchbookScreen extends Screen {
             }
         }
 
-        // 4. Левый клик (ЛКМ) — Выбор инструментов, утилит, индикаторов и рисование
+
+        // 4. Левый клик (ЛКМ) — Рисования, выбор инструментов, утилит, индикаторов и т.д.
         if (button == 0) {
-            int baseY = this.height - (scaledBtnHeight / 2);
-            int pencilY = (this.activeTool == Tool.PENCIL) ? peekY : baseY;
-            int colorPencilY = (this.activeTool == Tool.COLOR_PENCIL) ? peekY : baseY;
-            int colorMarkerY = (this.activeTool == Tool.COLOR_MARKER) ? peekY : baseY;
-            int eraserY = (this.activeTool == Tool.ERASER) ? peekY : baseY;
-            int smudgeY = (this.activeTool == Tool.SMUDGE) ? peekY : baseY;
-            int kneadedY = (this.activeTool == Tool.KNEADED_ERASER) ? peekY : baseY;
 
             // Выбор рисовочных инструментов
             if (hasPencil && mouseX >= pencilX && mouseX < pencilX + scaledBtnWidth && mouseY >= pencilY && mouseY < pencilY + scaledBtnHeight) {
@@ -1342,8 +1362,32 @@ public class SketchbookScreen extends Screen {
             }
 
             // Взаимодействие с холстом (Рисование / Использование утилит)
-            int scaledCanvasWidth = this.canvasWidth * this.scale;
-            int scaledImageHeight = this.fileHeight * this.scale;
+
+            if (lMouseX >= btnX && lMouseX < btnX + (btnFileWidth * this.scale) && lMouseY >= btnY && lMouseY < btnY + (btnFileHeight * this.scale)) {
+                this.isRotating = true;
+                return true;
+            }
+
+
+            // Нажатие на верхнюю закладку (Назад)
+            if (this.currentPageIndex > 0 && lMouseX >= coords.tabX() && lMouseX < coords.tabX() + scaledTabWidth && lMouseY >= coords.backTabY() && lMouseY < coords.backTabY() + scaledTabHeight) {
+                turnPage(this.currentPageIndex - 1);
+                return true;
+            }
+
+            // Нажатие на нижнюю закладку (Вперед)
+            if (this.currentPageIndex < pages.size() - 1 && lMouseX >= coords.tabX() && lMouseX < coords.tabX() + scaledTabWidth && lMouseY >= coords.forwardTabY() && lMouseY < coords.forwardTabY() + scaledTabHeight) {
+                turnPage(this.currentPageIndex + 1);
+                return true;
+            }
+
+            //Режим перетаскивания
+            if (lMouseX >= renderX && lMouseX < (renderX + scaledFrameWidth) && lMouseY >= renderY && lMouseY < (renderY + scaledImageHeight)) {
+                this.isDragging = true;
+                return true;
+            }
+
+
 
             if (lMouseX >= canvasScreenLeft && lMouseX < (canvasScreenLeft + scaledCanvasWidth) && lMouseY >= renderY && lMouseY < (renderY + scaledImageHeight)) {
 
@@ -1392,9 +1436,43 @@ public class SketchbookScreen extends Screen {
             }
         }
 
-
         // 5. Правый клик (ПКМ) — Смена твёрдости по кругу и быстрый сброс утилит
         if (button == 1) {
+
+            //Сброс вращения
+            if (lMouseX >= btnX && lMouseX < btnX + (btnFileWidth * this.scale) && lMouseY >= btnY && lMouseY < btnY + (btnFileHeight * this.scale)) {
+                this.rotationAngle = 0.0f;
+                clampSketchbook();
+                return true;
+            }
+            //Отрыв страницы
+            if (lMouseX >= blueZoneLeft && lMouseX <= blueZoneLeft + blueZoneWidth && lMouseY >= blueZoneTop && lMouseY <= blueZoneBottom) {
+                net.neoforged.neoforge.network.PacketDistributor.sendToServer(
+                        new SketchbookSavePayload(this.currentPageIndex, net.avizvul.esquissemod.component.SketchData.fromArray(this.pixels), this.pencilPixelsUsed, this.eraserPixelsUsed)
+                );
+                net.neoforged.neoforge.network.PacketDistributor.sendToServer(new TearPagePayload(this.currentPageIndex));
+
+                net.minecraft.world.item.ItemStack stack = this.minecraft.player.getMainHandItem();
+                if (!stack.is(ModItems.SKETCHBOOK.get())) stack = this.minecraft.player.getOffhandItem();
+
+                java.util.List<net.avizvul.esquissemod.component.SketchData> pages = new java.util.ArrayList<>(stack.getOrDefault(ModDataComponents.SKETCHBOOK_PAGES.get(), new java.util.ArrayList<>()));
+                pages.remove(this.currentPageIndex);
+
+                if (pages.isEmpty()) {
+                    this.onClose();
+                } else {
+                    if (this.currentPageIndex >= pages.size()) this.currentPageIndex = pages.size() - 1;
+                    stack.set(ModDataComponents.SKETCHBOOK_PAGES.get(), pages);
+
+                    int w = this.canvasWidth * this.resolutionMultiplier;
+                    int h = this.canvasHeight * this.resolutionMultiplier;
+                    this.pixels = pages.get(this.currentPageIndex).toArray(w, h);
+                    this.isCanvasDirty = true;
+                }
+                return true;
+            }
+
+
             // 1) Сброс фиксации лупы при клике ПКМ в любой точке экрана
             if (this.isMagnifierLocked) {
                 this.isMagnifierLocked = false;

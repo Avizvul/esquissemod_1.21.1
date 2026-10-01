@@ -77,8 +77,8 @@ public class PrinterScreen extends AbstractContainerScreen<PrinterMenu> {
         // 4. Кнопка печати (Координаты: 113, 34 | Размер: 18x47)
         int btnX = x + 113;
         int btnY = y + 34;
-        int btnWidth = 18;
-        int btnHeight = 47;
+        int btnWidth = 14;
+        int btnHeight = 17;
 
         boolean isPressed = (System.currentTimeMillis() - this.buttonPressTime) < 500;
         boolean isHovered = mouseX >= btnX && mouseX < btnX + btnWidth && mouseY >= btnY && mouseY < btnY + btnHeight;
@@ -106,8 +106,8 @@ public class PrinterScreen extends AbstractContainerScreen<PrinterMenu> {
 
             int btnX = x + 113;
             int btnY = y + 34;
-            int btnWidth = 18;
-            int btnHeight = 47;
+            int btnWidth = 14;
+            int btnHeight = 17;
 
             if (mouseX >= btnX && mouseX < btnX + btnWidth && mouseY >= btnY && mouseY < btnY + btnHeight) {
                 this.buttonPressTime = System.currentTimeMillis();

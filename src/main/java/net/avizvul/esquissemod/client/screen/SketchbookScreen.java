@@ -126,6 +126,10 @@ public class SketchbookScreen extends Screen {
     private boolean isTextBoxResizing = false;       // Флаг изменения размера текстового поля зажатием
     private double textBoxDragStartX, textBoxDragStartY;
 
+    boolean hasShift = Screen.hasShiftDown();
+    boolean hasCtrl = Screen.hasControlDown();
+
+
 
     private net.minecraft.world.item.ItemStack getColorMarkerStack() {
         return findItemStack(ModItems.COLOR_MARKER.get());
@@ -1706,6 +1710,8 @@ public class SketchbookScreen extends Screen {
             boolean hasShift = Screen.hasShiftDown();
             boolean hasCtrl = Screen.hasControlDown();
         }
+
+        TextBoxState box = this.activeTextBox;
 
         //Модель работы с текстом
 

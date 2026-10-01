@@ -128,8 +128,9 @@ public class SketchbookScreen extends Screen {
     private double textBoxDragStartX, textBoxDragStartY;
 
 
-    private int getCharIndexAtMouse(TextBoxState box, int screenX1, int screenY1, double mouseX, double mouseY) {
-        int maxW = Math.max(10, (int) ((box.x2 - box.x1 - 4) / box.fontScale));
+    private int getCharIndexAtMouse(TextBoxState box, int screenX1, int screenY1, int screenX2, double mouseX, double mouseY) {
+        // Точный расчёт ширины в реальных экранных пикселях (соответствует renderContent)
+        int maxW = Math.max(10, (int) ((screenX2 - screenX1 - 4) / box.fontScale));
         java.util.List<TextBoxState.TextLine> lines = box.getWrappedLines(this.font, maxW);
 
         // 1. Определение строки по Y-координате мыши
@@ -144,7 +145,7 @@ public class SketchbookScreen extends Screen {
             return targetLine.startCharIndex;
         }
 
-        // 2. Определение точного символа на этой строке по X-координате
+        // 2. Определение точного символа на этой строке по X-координате мыши
         int bestIndex = targetLine.startCharIndex;
         double minDiff = Double.MAX_VALUE;
 
@@ -160,6 +161,7 @@ public class SketchbookScreen extends Screen {
 
         return bestIndex;
     }
+
 
     boolean hasShift = Screen.hasShiftDown();
     boolean hasCtrl = Screen.hasControlDown();
@@ -1414,7 +1416,7 @@ public class SketchbookScreen extends Screen {
 
                 // Клик внутрь области текста — установка каретки и начало выделения
                 if (mouseX >= screenX1 && mouseX <= screenX2 && mouseY >= screenY1 && mouseY <= screenY2) {
-                    int charIndex = getCharIndexAtMouse(box, screenX1, screenY1, mouseX, mouseY);
+                    int charIndex = getCharIndexAtMouse(box, screenX1, screenY1, screenX2, mouseX, mouseY);
                     boolean hasShift = Screen.hasShiftDown();
 
                     box.setCaret(charIndex, hasShift);
@@ -1642,11 +1644,13 @@ public class SketchbookScreen extends Screen {
 
             int screenX1 = canvasScreenLeft + (int) (box.x1 * pCell);
             int screenY1 = renderY + (int) (box.y1 * pCell);
+            int screenX2 = canvasScreenLeft + (int) (box.x2 * pCell);
 
-            int charIndex = getCharIndexAtMouse(box, screenX1, screenY1, mouseX, mouseY);
+            int charIndex = getCharIndexAtMouse(box, screenX1, screenY1, screenX2, mouseX, mouseY);
             box.setCaret(charIndex, true);
             return true;
         }
+
 
         // 2. Растягивание текстового поля зажатием
         if (this.isTextBoxResizing && this.activeTextBox != null) {
@@ -1801,7 +1805,6 @@ public class SketchbookScreen extends Screen {
         return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
     }
 
-
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
         // 1. Обработка ввода в текстовую рамку
@@ -1915,7 +1918,6 @@ public class SketchbookScreen extends Screen {
         // Если никакой хоткей не сработал — вызываем базовый Screen (чтобы ESC закрывал GUI скетчбука)
         return super.keyPressed(keyCode, scanCode, modifiers);
     }
-
 
     @Override
     public boolean keyReleased(int keyCode, int scanCode, int modifiers) {
@@ -2328,34 +2330,49 @@ public class SketchbookScreen extends Screen {
     }
 
     private void commitTextToCanvas() {
-        if (!this.isTextModeActive || this.activeTextBox == null || this.activeTextBox.text.length() == 0) {
+        if (!this.isTextModeActive || this.activeTextBox == null) {
             this.isTextModeActive = false;
             this.activeTextBox = null;
             return;
         }
 
         TextBoxState box = this.activeTextBox;
-        int textColor = getActiveTextColorArgb();
+        String formattedString = box.toFormattedString();
 
-        int[][] textPixels = net.avizvul.esquissemod.util.TextRasterizer.rasterize(
-                box.text.toString(),
-                box.getWidth(),
-                box.getHeight(),
+        if (formattedString.isEmpty()) {
+            this.isTextModeActive = false;
+            this.activeTextBox = null;
+            return;
+        }
+
+        int textColor = getActiveTextColorArgb();
+        int boxW = box.getWidth();
+        int boxH = box.getHeight();
+
+        // 1. Растеризуем текст в 2D-массив
+    int[][] textPixels = net.avizvul.esquissemod.util.TextRasterizer.rasterize(
+                formattedString,
+                boxW,
+                boxH,
                 box.fontScale,
-                textColor,
-                false, false, false, false
+                textColor
         );
 
+        // 2. Безопасное запекание пикселей на холсте с проверкой границ
         if (textPixels != null && textPixels.length > 0) {
-            int w = textPixels.length;          // Ширина прямоугольного массива (например, 125)
-            int h = textPixels[0].length;       // ИСПРАВЛЕНИЕ: Реальная высота массива (например, 40)
+            int w = textPixels.length;
 
             for (int x = 0; x < w; x++) {
+                if (textPixels[x] == null) continue;
+                int h = textPixels[x].length;
+
                 for (int y = 0; y < h; y++) {
                     int px = textPixels[x][y];
-                    if ((px >> 24 & 0xFF) > 0) {
+                    if (((px >> 24) & 0xFF) > 0) {
                         int targetX = box.x1 + x;
                         int targetY = box.y1 + y;
+
+                        // Защита от выхода за пределы холста (126x192)
                         if (targetX >= 0 && targetX < 126 && targetY >= 0 && targetY < 192) {
                             this.pixels[targetX][targetY] = ColorUtils.blendColors(this.pixels[targetX][targetY], px);
                         }
@@ -2364,6 +2381,7 @@ public class SketchbookScreen extends Screen {
             }
         }
 
+        // 3. Завершение работы с текстовым полем
         this.isCanvasDirty = true;
         this.isTextModeActive = false;
         this.activeTextBox = null;

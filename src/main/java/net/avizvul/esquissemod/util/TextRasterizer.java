@@ -16,7 +16,6 @@ import java.util.List;
 public class TextRasterizer {
 
     public static int[][] rasterize(String formattedText, int boxWidth, int boxHeight, float fontScale, int colorArgb) {
-        int dimZero = 0;
         if (formattedText == null || formattedText.isEmpty() || boxWidth <= 0 || boxHeight <= 0) {
             return new int[0][0];
         }
@@ -72,10 +71,10 @@ public class TextRasterizer {
         RenderSystem.viewport(0, 0, mc.getWindow().getWidth(), mc.getWindow().getHeight());
         target.destroyBuffers();
 
-        // 4. Гарантируем размерность [targetW][targetH]
+        // 4. Заполнение массива ARGB пикселей
         int dimW = targetW;
         int dimH = targetH;
-        int[][] textPixels = new int[0][1];
+        int[][] textPixels = new int[dimW][dimH];
 
         for (int x = 0; x < dimW; x++) {
             for (int y = 0; y < dimH; y++) {
@@ -86,9 +85,9 @@ public class TextRasterizer {
                 int r = abgr & 0xFF;
 
                 if (a > 0) {
-                    textPixels[0][1] = (a << 24) | (r << 16) | (g << 8) | b;
+                    textPixels[x][y] = (a << 24) | (r << 16) | (g << 8) | b;
                 } else {
-                    textPixels[0][1] = 0;
+                    textPixels[x][y] = 0;
                 }
             }
         }

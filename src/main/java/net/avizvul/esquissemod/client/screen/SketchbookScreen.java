@@ -126,6 +126,30 @@ public class SketchbookScreen extends Screen {
     private boolean isTextBoxResizing = false;       // Флаг изменения размера текстового поля зажатием
     private double textBoxDragStartX, textBoxDragStartY;
 
+
+    private int getCharIndexAtMouse(TextBoxState box, int screenX1, double mouseX) {
+        double relativeX = (mouseX - (screenX1 + 2)) / box.fontScale;
+        if (relativeX <= 0) return 0;
+
+        int charPos = 0;
+        for (int i = 0; i < box.chars.size(); i++) {
+            String sub = box.getFormattedSubstring(0, i + 1);
+            int widthSoFar = this.font.width(sub);
+            if (widthSoFar > relativeX) {
+                String prevSub = box.getFormattedSubstring(0, i);
+                int prevWidth = this.font.width(prevSub);
+                if (relativeX - prevWidth < widthSoFar - relativeX) {
+                    charPos = i;
+                } else {
+                    charPos = i + 1;
+                }
+                break;
+            }
+            charPos = i + 1;
+        }
+        return charPos;
+    }
+    private boolean isTextSelectingWithMouse = false; // Флаг выделения букв зажатой ЛКМ
     boolean hasShift = Screen.hasShiftDown();
     boolean hasCtrl = Screen.hasControlDown();
 
@@ -737,7 +761,6 @@ public class SketchbookScreen extends Screen {
         // --- 6. ТЕКСТОВАЯ РАМКА, КУРСОР И ПАНЕЛЬ ФОРМАТИРОВАНИЯ ---
         if (this.isTextModeActive && this.activeTextBox != null) {
             TextBoxState box = this.activeTextBox;
-
             int canvasLeft = canvasScreenLeft;
             int canvasTop = renderY;
             double pCell = (double) this.scale / this.resolutionMultiplier;
@@ -747,7 +770,7 @@ public class SketchbookScreen extends Screen {
             int screenX2 = canvasLeft + (int) (box.x2 * pCell);
             int screenY2 = canvasTop + (int) (box.y2 * pCell);
 
-            // Отрисовка пунктирной рамки выделения
+            // 1. Отрисовка внешней пунктирной рамки
             int dashLen = 4, dashGap = 2, outlineColor = 0xFF007ACC;
             for (int px = screenX1; px < screenX2; px += dashLen + dashGap) {
                 guiGraphics.fill(px, screenY1, Math.min(px + dashLen, screenX2), screenY1 + 1, outlineColor);
@@ -758,65 +781,125 @@ public class SketchbookScreen extends Screen {
                 guiGraphics.fill(screenX2, py, screenX2 + 1, Math.min(py + dashLen, screenY2), outlineColor);
             }
 
-            // Угловой маркер изменения размера (юго-восток)
+            // 2. Угловой маркер изменения размера
             int handleSize = 6;
             guiGraphics.fill(screenX2 - handleSize / 2, screenY2 - handleSize / 2, screenX2 + handleSize / 2, screenY2 + handleSize / 2, 0xFFFFFFFF);
 
+            // 3. Расчёт перенесённых строк
+            int maxW = Math.max(10, (int) ((screenX2 - screenX1 - 4) / box.fontScale));
+            java.util.List<TextBoxState.TextLine> lines = box.getWrappedLines(this.font, maxW);
+            int lineH = (int) (9 * box.fontScale);
+
+            // 4. Подсветка выделения (ПОСТРОЧНО)
             if (box.hasSelection()) {
-                int minPos = box.getSelectionMin();
-                int maxPos = box.getSelectionMax();
+                int min = box.getSelectionMin();
+                int max = box.getSelectionMax();
 
-                String fullText = box.text.toString();
-                String beforeSelection = fullText.substring(0, minPos);
-                String selectedSegment = fullText.substring(minPos, maxPos);
+                for (int l = 0; l < lines.size(); l++) {
+                    TextBoxState.TextLine line = lines.get(l);
+                    int lineY = screenY1 + 2 + l * lineH;
 
-                int startOffsetX = (int) (this.font.width(beforeSelection) * box.fontScale);
-                int selectionWidth = (int) (this.font.width(selectedSegment) * box.fontScale);
+                    if (max > line.startCharIndex && min <= line.endCharIndex) {
+                        int selStart = Math.max(min, line.startCharIndex);
+                        int selEnd = Math.min(max, line.endCharIndex);
 
-                int highlightX1 = screenX1 + 2 + startOffsetX;
-                int highlightY1 = screenY1 + 2;
-                int highlightX2 = highlightX1 + selectionWidth;
-                int highlightY2 = highlightY1 + (int) (9 * box.fontScale);
+                        String textBefore = box.getFormattedSubstring(line.startCharIndex, selStart);
+                        String textSelected = box.getFormattedSubstring(line.startCharIndex, selEnd);
 
-                // Полупрозрачный синий прямоугольник под текстом (0x802266FF)
-                guiGraphics.fill(highlightX1, highlightY1, highlightX2, highlightY2, 0x802266FF);
+                        int hX1 = screenX1 + 2 + (int) (this.font.width(textBefore) * box.fontScale);
+                        int hX2 = screenX1 + 2 + (int) (this.font.width(textSelected) * box.fontScale);
+
+                        if (max > line.endCharIndex && line.endCharIndex > line.startCharIndex) {
+                            hX2 = Math.max(hX2, screenX1 + 2 + (int) (line.width * box.fontScale) + 3);
+                        }
+
+                        // Синий прямоугольник выделения для текущей строки
+                        guiGraphics.fill(hX1, lineY, hX2, lineY + lineH, 0x802266FF);
+                    }
+                }
             }
 
-            // Текст с мигающей кареткой ввода
-            StringBuilder previewBuf = new StringBuilder(box.text);
-            if (System.currentTimeMillis() / 500 % 2 == 0) {
-                int insertPos = Math.min(box.cursorPos, previewBuf.length());
-                previewBuf.insert(insertPos, "|");
-            }
-
-            guiGraphics.pose().pushPose();
-            guiGraphics.pose().translate(screenX1 + 2, screenY1 + 2, 0);
-            guiGraphics.pose().scale(box.fontScale, box.fontScale, 1.0f);
-
-            int maxW = (int) ((screenX2 - screenX1 - 4) / box.fontScale);
+            // 5. Отрисовка текста (ПОСТРОЧНО)
             int textColor = getActiveTextColorArgb();
-            guiGraphics.drawWordWrap(this.font, Component.literal(previewBuf.toString()), 0, 0, maxW, textColor);
-            guiGraphics.pose().popPose();
+            for (int l = 0; l < lines.size(); l++) {
+                TextBoxState.TextLine line = lines.get(l);
+                int lineY = screenY1 + 2 + l * lineH;
+
+                guiGraphics.pose().pushPose();
+                guiGraphics.pose().translate(screenX1 + 2, lineY, 0);
+                guiGraphics.pose().scale(box.fontScale, box.fontScale, 1.0f);
+                guiGraphics.drawString(this.font, line.formattedText, 0, 0, textColor, false);
+                guiGraphics.pose().popPose();
+            }
+
+            // 6. Отрисовка мигающей каретки (в точных 2D координатах)
+            int caretLineIdx = 0;
+            TextBoxState.TextLine caretLine = lines.get(0);
+            for (int l = 0; l < lines.size(); l++) {
+                TextBoxState.TextLine line = lines.get(l);
+                if (box.caret >= line.startCharIndex && (box.caret <= line.endCharIndex || l == lines.size() - 1)) {
+                    caretLineIdx = l;
+                    caretLine = line;
+                    break;
+                }
+            }
+
+            String textBeforeCaret = box.getFormattedSubstring(caretLine.startCharIndex, box.caret);
+            int caretX = screenX1 + 2 + (int) (this.font.width(textBeforeCaret) * box.fontScale);
+            int caretY = screenY1 + 2 + caretLineIdx * lineH;
+
+            if (System.currentTimeMillis() / 500 % 2 == 0) {
+                guiGraphics.fill(caretX, caretY, caretX + 1, caretY + lineH, 0xFFFFFFFF);
+            }
 
             // Плавающая панель форматирования
             int toolbarX = screenX1;
             int toolbarY = screenY2 + 6;
-            int toolbarWidth = 140;
-            int toolbarHeight = 20;
 
-            guiGraphics.fill(toolbarX, toolbarY, toolbarX + toolbarWidth, toolbarY + toolbarHeight, 0xF0222222);
-            guiGraphics.fill(toolbarX - 1, toolbarY - 1, toolbarX + toolbarWidth + 1, toolbarY + toolbarHeight + 1, 0xFF444444);
+            // Фон панели
+            guiGraphics.fill(toolbarX, toolbarY, toolbarX + 136, toolbarY + 20, 0xE0000000);
 
-            drawToolbarButton(guiGraphics, "B", toolbarX + 4, toolbarY + 2, false);
-            drawToolbarButton(guiGraphics, "I", toolbarX + 18, toolbarY + 2, false);
-            drawToolbarButton(guiGraphics, "U", toolbarX + 32, toolbarY + 2, false);
-            drawToolbarButton(guiGraphics, "S", toolbarX + 46, toolbarY + 2, false);
+            // Опрос динамической активности каждого стиля
+            boolean isBoldActive = box.isStyleActive(TextBoxState.StyleType.BOLD);
+            boolean isItalicActive = box.isStyleActive(TextBoxState.StyleType.ITALIC);
+            boolean isUnderlineActive = box.isStyleActive(TextBoxState.StyleType.UNDERLINE);
+            boolean isStrikethroughActive = box.isStyleActive(TextBoxState.StyleType.STRIKETHROUGH);
 
-            drawToolbarButton(guiGraphics, "A-", toolbarX + 66, toolbarY + 2, false);
-            drawToolbarButton(guiGraphics, "A+", toolbarX + 82, toolbarY + 2, false);
+            // Кнопка Bold (B)
+            int bBg = isBoldActive ? 0xFF007ACC : 0x40FFFFFF;
+            guiGraphics.fill(toolbarX + 4, toolbarY + 3, toolbarX + 16, toolbarY + 17, bBg);
+            guiGraphics.drawString(this.font, "§lB§r", toolbarX + 7, toolbarY + 5, 0xFFFFFFFF, false);
 
-            guiGraphics.drawString(this.font, "§a✓", toolbarX + 106, toolbarY + 6, 0xFF00FF00, false);
-            guiGraphics.drawString(this.font, "§c✗", toolbarX + 122, toolbarY + 6, 0xFFFF0000, false);
+            // Кнопка Italic (I)
+            int iBg = isItalicActive ? 0xFF007ACC : 0x40FFFFFF;
+            guiGraphics.fill(toolbarX + 18, toolbarY + 3, toolbarX + 30, toolbarY + 17, iBg);
+            guiGraphics.drawString(this.font, "§oI§r", toolbarX + 22, toolbarY + 5, 0xFFFFFFFF, false);
+
+            // Кнопка Underline (U)
+            int uBg = isUnderlineActive ? 0xFF007ACC : 0x40FFFFFF;
+            guiGraphics.fill(toolbarX + 32, toolbarY + 3, toolbarX + 44, toolbarY + 17, uBg);
+            guiGraphics.drawString(this.font, "§nU§r", toolbarX + 36, toolbarY + 5, 0xFFFFFFFF, false);
+
+            // Кнопка Strikethrough (S)
+            int sBg = isStrikethroughActive ? 0xFF007ACC : 0x40FFFFFF;
+            guiGraphics.fill(toolbarX + 46, toolbarY + 3, toolbarX + 58, toolbarY + 17, sBg);
+            guiGraphics.drawString(this.font, "§mS§r", toolbarX + 50, toolbarY + 5, 0xFFFFFFFF, false);
+
+            // Размер шрифта A- и A+
+            guiGraphics.fill(toolbarX + 66, toolbarY + 3, toolbarX + 78, toolbarY + 17, 0x40FFFFFF);
+            guiGraphics.drawString(this.font, "-", toolbarX + 70, toolbarY + 5, 0xFFFFFFFF, false);
+
+            guiGraphics.fill(toolbarX + 82, toolbarY + 3, toolbarX + 94, toolbarY + 17, 0x40FFFFFF);
+            guiGraphics.drawString(this.font, "+", toolbarX + 86, toolbarY + 5, 0xFFFFFFFF, false);
+
+            // Кнопка «Применить» (✓)
+            guiGraphics.fill(toolbarX + 104, toolbarY + 3, toolbarX + 116, toolbarY + 17, 0xFF228B22);
+            guiGraphics.drawString(this.font, "v", toolbarX + 108, toolbarY + 5, 0xFFFFFFFF, false);
+
+            // Кнопка «Отмена» (✗)
+            guiGraphics.fill(toolbarX + 120, toolbarY + 3, toolbarX + 132, toolbarY + 17, 0xFFB22222);
+            guiGraphics.drawString(this.font, "x", toolbarX + 124, toolbarY + 5, 0xFFFFFFFF, false);
+
         }
     }
 
@@ -1256,6 +1339,7 @@ public class SketchbookScreen extends Screen {
         boolean isPencilSelected = (this.activeTool == Tool.PENCIL) || (this.activeTool == Tool.TEXT && this.previousDrawingTool == Tool.PENCIL);
         boolean isColorPencilSelected = (this.activeTool == Tool.COLOR_PENCIL) || (this.activeTool == Tool.TEXT && this.previousDrawingTool == Tool.COLOR_PENCIL);
 
+
         if ((hasPencil && isPencilSelected) || (hasColorPencil && isColorPencilSelected)) {
             int activeX = isPencilSelected ? toolCoords.pencilX() : toolCoords.colorPencilX();
             int textSymbolX = activeX + (scaledBtnWidth / 2) - (this.font.width("(T)") / 2);
@@ -1271,20 +1355,21 @@ public class SketchbookScreen extends Screen {
                 return true;
             }
         }
-
         // 2. Взаимодействие с активной текстовой рамкой и панелью форматирования
         if (this.isTextModeActive && this.activeTextBox != null) {
             TextBoxState box = this.activeTextBox;
             double pCell = (double) this.scale / this.resolutionMultiplier;
+
             int screenX1 = canvasScreenLeft + (int) (box.x1 * pCell);
             int screenY1 = renderY + (int) (box.y1 * pCell);
             int screenX2 = canvasScreenLeft + (int) (box.x2 * pCell);
             int screenY2 = renderY + (int) (box.y2 * pCell);
-            int handleSize = 8;
 
+            int handleSize = 8;
             int toolbarX = screenX1;
             int toolbarY = screenY2 + 6;
 
+            // Панель форматирования
             if (mouseY >= toolbarY && mouseY <= toolbarY + 20) {
                 if (mouseX >= toolbarX + 4 && mouseX <= toolbarX + 16) { box.applyFormattingCode("§l"); return true; }
                 if (mouseX >= toolbarX + 18 && mouseX <= toolbarX + 30) { box.applyFormattingCode("§o"); return true; }
@@ -1297,24 +1382,31 @@ public class SketchbookScreen extends Screen {
             }
 
             if (button == 0) {
+                // Изменение размера рамки за угловой маркер
                 if (mouseX >= screenX2 - handleSize && mouseX <= screenX2 + handleSize && mouseY >= screenY2 - handleSize && mouseY <= screenY2 + handleSize) {
                     this.isTextBoxResizing = true;
                     return true;
                 }
 
-                if (mouseX >= screenX1 && mouseX <= screenX2 && mouseY >= screenY1 && mouseY <= screenY2) {
+                // Перетаскивание рамки за верхний край
+                if (mouseX >= screenX1 && mouseX <= screenX2 && mouseY >= screenY1 - 6 && mouseY <= screenY1 + 2) {
                     this.isTextBoxDragging = true;
                     this.textBoxDragStartX = mouseX - screenX1;
                     this.textBoxDragStartY = mouseY - screenY1;
+                    return true;
+                }
 
-                    double relativeX = (mouseX - (screenX1 + 2)) / box.fontScale;
-                    int estimatedCharPos = Math.max(0, Math.min(box.text.length(), (int) (relativeX / 6.0)));
-                    box.cursorPos = estimatedCharPos;
+                // Клик внутрь области текста — установка каретки и начало выделения
+                if (mouseX >= screenX1 && mouseX <= screenX2 && mouseY >= screenY1 && mouseY <= screenY2) {
+                    int charIndex = getCharIndexAtMouse(box, screenX1, mouseX);
+                    boolean hasShift = Screen.hasShiftDown();
+
+                    box.setCaret(charIndex, hasShift); // При Shift=false якорь сбрасывается, при Shift=true — фиксируется
+                    this.isTextSelectingWithMouse = true;
                     return true;
                 }
             }
         }
-
         // 3. Создание новой текстовой зоны при клике по холсту
         if (this.activeTool == Tool.TEXT && button == 0) {
             double physicalCellSize = (double) this.scale / this.resolutionMultiplier;
@@ -1555,12 +1647,33 @@ public class SketchbookScreen extends Screen {
             }
         }
 
+        if (mouseX >= screenX1 && mouseX <= screenX2 && mouseY >= screenY1 && mouseY <= screenY2) {
+            int charIndex = getCharIndexAtMouse(box, screenX1, screenY1, mouseX, mouseY);
+            boolean hasShift = Screen.hasShiftDown();
+
+            box.setCaret(charIndex, hasShift);
+            this.isTextSelectingWithMouse = true;
+            return true;
+        }
+
         return super.mouseClicked(mouseX, mouseY, button);
     }
 
     @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
-        // Растягивание текстового поля зажатием
+        // 1. Выделение букв протяжкой мыши
+        if (this.isTextSelectingWithMouse && this.isTextModeActive && this.activeTextBox != null) {
+            TextBoxState box = this.activeTextBox;
+            double pCell = (double) this.scale / this.resolutionMultiplier;
+            int canvasScreenLeft = (int) this.exactGuiLeft + ((this.frameWidth + this.deadZoneWidth) * this.scale);
+            int screenX1 = canvasScreenLeft + (int) (box.x1 * pCell);
+
+            int charIndex = getCharIndexAtMouse(box, screenX1, mouseX);
+            box.setCaret(charIndex, true); // Обновляем каретку, удерживая якорь
+            return true;
+        }
+
+        // 2. Растягивание текстового поля зажатием
         if (this.isTextBoxResizing && this.activeTextBox != null) {
             TextBoxState box = this.activeTextBox;
             double physicalCellSize = (double) this.scale / this.resolutionMultiplier;
@@ -1574,7 +1687,8 @@ public class SketchbookScreen extends Screen {
             box.y2 = Math.max(box.y1 + 10, Math.min(191, newY2));
             return true;
         }
-        // Перемещение текстового поля зажатием
+
+        // 3. Перемещение текстового поля зажатием
         else if (this.isTextBoxDragging && this.activeTextBox != null) {
             TextBoxState box = this.activeTextBox;
             double physicalCellSize = (double) this.scale / this.resolutionMultiplier;
@@ -1596,6 +1710,7 @@ public class SketchbookScreen extends Screen {
             box.y2 = newY1 + height;
             return true;
         }
+
 
         if (this.isRulerDragging) {
             this.rulerX += dragX;
@@ -1632,16 +1747,34 @@ public class SketchbookScreen extends Screen {
             clampSketchbook();
             return true;
         }
+
+        if (this.isTextSelectingWithMouse && this.isTextModeActive && this.activeTextBox != null) {
+            TextBoxState box = this.activeTextBox;
+            double pCell = (double) this.scale / this.resolutionMultiplier;
+            int canvasScreenLeft = (int) this.exactGuiLeft + ((this.frameWidth + this.deadZoneWidth) * this.scale);
+            int screenX1 = canvasScreenLeft + (int) (box.x1 * pCell);
+            int screenY1 = (int) this.exactGuiTop + (int) (box.y1 * pCell);
+
+            int charIndex = getCharIndexAtMouse(box, screenX1, screenY1, mouseX, mouseY);
+            box.setCaret(charIndex, true);
+            return true;
+        }
+
+
         return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
     }
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
+
+        // 1. Работа с текстом
         if (button == 0) {
+            this.isTextSelectingWithMouse = false;
             this.isTextBoxDragging = false;
             this.isTextBoxResizing = false;
         }
 
+        // 2. Всё остальное
         if (button == 0) {
             if (this.strokePixels != null) {
                 this.strokePixels = new boolean[this.canvasWidth * this.resolutionMultiplier][this.canvasHeight * this.resolutionMultiplier];
@@ -1703,50 +1836,46 @@ public class SketchbookScreen extends Screen {
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-
-        // 1. Полная блокировка хоткеев во время активного ввода текста в текстовое поле
+        // 1. Обработка ввода в текстовую рамку
         if (this.isTextModeActive && this.activeTextBox != null) {
             TextBoxState box = this.activeTextBox;
             boolean hasShift = Screen.hasShiftDown();
             boolean hasCtrl = Screen.hasControlDown();
+
+            if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+                // Закрываем только текстовую рамку
+                this.isTextModeActive = false;
+                this.activeTextBox = null;
+                return true;
+            } else if ((keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) && hasCtrl) {
+                commitTextToCanvas();
+                return true;
+            } else if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
+                box.insertText("\n");
+                return true;
+            } else if (keyCode == GLFW.GLFW_KEY_BACKSPACE) {
+                box.deleteBack();
+                return true;
+            } else if (keyCode == GLFW.GLFW_KEY_DELETE) {
+                box.deleteForward();
+                return true;
+            } else if (keyCode == GLFW.GLFW_KEY_LEFT) {
+                box.moveCursorLeft(hasShift, hasCtrl);
+                return true;
+            } else if (keyCode == GLFW.GLFW_KEY_RIGHT) {
+                box.moveCursorRight(hasShift, hasCtrl);
+                return true;
+            } else if (keyCode == GLFW.GLFW_KEY_HOME) {
+                box.moveCursorHome(hasShift, hasCtrl);
+                return true;
+            } else if (keyCode == GLFW.GLFW_KEY_END) {
+                box.moveCursorEnd(hasShift, hasCtrl);
+                return true;
+            }
+            return true; // Блокируем остальные хоткеи рисования во время ввода текста
         }
 
-        TextBoxState box = this.activeTextBox;
-
-        //Модель работы с текстом
-
-        if ((keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) && hasCtrl) {
-            commitTextToCanvas();
-            return true;
-        } else if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
-            box.insertText("\n");
-            return true;
-        } else if (keyCode == GLFW.GLFW_KEY_BACKSPACE) {
-            box.deleteBack();
-            return true;
-        } else if (keyCode == GLFW.GLFW_KEY_DELETE) {
-            box.deleteForward();
-            return true;
-        } else if (keyCode == GLFW.GLFW_KEY_LEFT) {
-            box.moveCursorLeft(hasShift, hasCtrl);
-            return true;
-        } else if (keyCode == GLFW.GLFW_KEY_RIGHT) {
-            box.moveCursorRight(hasShift, hasCtrl);
-            return true;
-        } else if (keyCode == GLFW.GLFW_KEY_HOME) {
-            box.moveCursorHome(hasShift, hasCtrl);
-            return true;
-        } else if (keyCode == GLFW.GLFW_KEY_END) {
-            box.moveCursorEnd(hasShift, hasCtrl);
-            return true;
-        } else if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
-            this.isTextModeActive = false;
-            this.activeTextBox = null;
-            return true;
-        }
-
-
-    // 2. Переключение основных инструментов рисования
+        // 2. Хоткеи рисования и утилит (когда текстовый режим ВЫКЛЮЧЕН)
         boolean hasPencil = hasTool(ModItems.PENCIL.get());
         boolean hasEraser = hasTool(ModItems.ERASER.get());
         boolean hasSmudge = hasTool(ModItems.SMUDGE.get());
@@ -1774,7 +1903,6 @@ public class SketchbookScreen extends Screen {
             return true;
         }
 
-        // 3. Хоткей Линейки (R / Shift+R)
         if (keyCode == GLFW.GLFW_KEY_R && hasRuler) {
             if (Screen.hasShiftDown()) {
                 if (!this.isQuickRulerMode) {
@@ -1789,7 +1917,6 @@ public class SketchbookScreen extends Screen {
             return true;
         }
 
-        // 4. Хоткей Циркуля (D / Shift+D)
         if (keyCode == GLFW.GLFW_KEY_D && hasCompass) {
             if (Screen.hasShiftDown()) {
                 if (!this.isQuickCompassMode) {
@@ -1809,7 +1936,6 @@ public class SketchbookScreen extends Screen {
             return true;
         }
 
-        // 5. Хоткей Лупы (Z / Shift+Z)
         if (keyCode == GLFW.GLFW_KEY_Z && hasMagGlass) {
             this.isMagnifyingMode = true;
             if (Screen.hasShiftDown()) {
@@ -1818,8 +1944,10 @@ public class SketchbookScreen extends Screen {
             return true;
         }
 
+        // Если никакой хоткей не сработал — вызываем базовый Screen (чтобы ESC закрывал GUI скетчбука)
         return super.keyPressed(keyCode, scanCode, modifiers);
     }
+
 
     @Override
     public boolean keyReleased(int keyCode, int scanCode, int modifiers) {
@@ -1843,16 +1971,43 @@ public class SketchbookScreen extends Screen {
     }
 
 
+    public static class StyledChar {
+        public char ch;
+        public boolean bold;
+        public boolean italic;
+        public boolean underline;
+        public boolean strikethrough;
+
+        public StyledChar(char ch, boolean bold, boolean italic, boolean underline, boolean strikethrough) {
+            this.ch = ch;
+            this.bold = bold;
+            this.italic = italic;
+            this.underline = underline;
+            this.strikethrough = strikethrough;
+        }
+    }
+
     public static class TextBoxState {
         public int x1, y1;
         public int x2, y2;
-        public StringBuilder text = new StringBuilder();
 
-        // Двухиндексная схема выделения и каретки
-        public int anchor = 0; // Точка зафиксированного якоря
-        public int caret = 0;  // Текущее положение каретки
-        public int cursorPos = 0; // Поле для обратной совместимости
+        // Массив видимых пользовательских символов (без тегов §)
+        public java.util.List<StyledChar> chars = new java.util.ArrayList<>();
+        public StringBuilder text = new StringBuilder(); // Синхронизированная Minecraft-строка с §
+
+        public int anchor = 0;
+        public int caret = 0;
+        public int cursorPos = 0;
         public float fontScale = 1.0f;
+
+        // Переключатели стиля для печати в пустой позиции
+        public boolean pendingBold = false;
+        public boolean pendingItalic = false;
+        public boolean pendingUnderline = false;
+        public boolean pendingStrikethrough = false;
+        public boolean hasPendingOverride = false;
+
+        public enum StyleType { BOLD, ITALIC, UNDERLINE, STRIKETHROUGH }
 
         public TextBoxState(int startX, int startY) {
             this.x1 = startX;
@@ -1862,54 +2017,188 @@ public class SketchbookScreen extends Screen {
             this.anchor = 0;
             this.caret = 0;
             this.cursorPos = 0;
+            updateText();
         }
 
         public int getWidth() { return Math.max(10, Math.abs(x2 - x1)); }
         public int getHeight() { return Math.max(10, Math.abs(y2 - y1)); }
 
-        // --- ЛОГИКА ВЫДЕЛЕНИЯ ---
-        public boolean hasSelection() {
-            return anchor != caret;
-        }
-
-        public int getSelectionMin() {
-            return Math.min(anchor, caret);
-        }
-
-        public int getSelectionMax() {
-            return Math.max(anchor, caret);
-        }
-
-        public void setCaret(int pos, boolean select) {
-            this.caret = Math.max(0, Math.min(text.length(), pos));
-            if (!select) {
-                this.anchor = this.caret;
-            }
+        // --- СИНХРОНИЗАЦИЯ И СБОРКА СТРОК С ТЕГАМИ § ---
+        public void updateText() {
+            this.text = new StringBuilder(toFormattedString());
             this.cursorPos = this.caret;
         }
 
+        public String toFormattedString() {
+            return getFormattedSubstring(0, chars.size());
+        }
+
+        public String getFormattedSubstring(int start, int end) {
+            int s = Math.max(0, Math.min(start, chars.size()));
+            int e = Math.max(s, Math.min(end, chars.size()));
+            if (s >= e) return "";
+
+            StringBuilder sb = new StringBuilder();
+            boolean curB = false, curI = false, curU = false, curM = false;
+
+            for (int idx = s; idx < e; idx++) {
+                StyledChar sc = chars.get(idx);
+                if (sc.ch == '\n') {
+                    if (curB || curI || curU || curM) {
+                        sb.append("§r");
+                        curB = curI = curU = curM = false;
+                    }
+                    sb.append('\n');
+                    continue;
+                }
+
+                boolean needReset = (curB && !sc.bold) || (curI && !sc.italic)
+                        || (curU && !sc.underline) || (curM && !sc.strikethrough);
+
+                if (needReset) {
+                    sb.append("§r");
+                    curB = curI = curU = curM = false;
+                }
+
+                if (sc.bold && !curB) { sb.append("§l"); curB = true; }
+                if (sc.italic && !curI) { sb.append("§o"); curI = true; }
+                if (sc.underline && !curU) { sb.append("§n"); curU = true; }
+                if (sc.strikethrough && !curM) { sb.append("§m"); curM = true; }
+
+                sb.append(sc.ch);
+            }
+
+            if (curB || curI || curU || curM) {
+                sb.append("§r");
+            }
+            return sb.toString();
+        }
+
+        // --- УПРАВЛЕНИЕ ВЫДЕЛЕНИЕМ И КАРЕТКОЙ ---
+        public boolean hasSelection() { return anchor != caret; }
+        public int getSelectionMin() { return Math.min(anchor, caret); }
+        public int getSelectionMax() { return Math.max(anchor, caret); }
+
+        public void setCaret(int pos, boolean select) {
+            this.caret = Math.max(0, Math.min(chars.size(), pos));
+            if (!select) {
+                this.anchor = this.caret;
+            }
+            this.hasPendingOverride = false;
+            updateText();
+        }
+
+        // --- ПРОВЕРКА АКТИВНОСТИ СТИЛЯ ДЛЯ ПОДСВЕТКИ КНОПОК ---
+        public boolean isStyleActive(StyleType style) {
+            if (hasSelection()) {
+                int min = getSelectionMin();
+                int max = getSelectionMax();
+                for (int i = min; i < max; i++) {
+                    StyledChar sc = chars.get(i);
+                    boolean match = switch (style) {
+                        case BOLD -> sc.bold;
+                        case ITALIC -> sc.italic;
+                        case UNDERLINE -> sc.underline;
+                        case STRIKETHROUGH -> sc.strikethrough;
+                    };
+                    if (!match) return false;
+                }
+                return true;
+            } else {
+                if (hasPendingOverride) {
+                    return switch (style) {
+                        case BOLD -> pendingBold;
+                        case ITALIC -> pendingItalic;
+                        case UNDERLINE -> pendingUnderline;
+                        case STRIKETHROUGH -> pendingStrikethrough;
+                    };
+                }
+                int idx = caret > 0 ? caret - 1 : 0;
+                if (idx >= 0 && idx < chars.size()) {
+                    StyledChar sc = chars.get(idx);
+                    return switch (style) {
+                        case BOLD -> sc.bold;
+                        case ITALIC -> sc.italic;
+                        case UNDERLINE -> sc.underline;
+                        case STRIKETHROUGH -> sc.strikethrough;
+                    };
+                }
+                return false;
+            }
+        }
+
+        // --- ПЕРЕКЛЮЧЕНИЕ СТИЛЕЙ (TOGGLE LOGIC) ---
+        public void toggleStyle(StyleType style) {
+            if (hasSelection()) {
+                int min = getSelectionMin();
+                int max = getSelectionMax();
+                boolean currentlyActive = isStyleActive(style);
+                boolean newValue = !currentlyActive;
+
+                for (int i = min; i < max; i++) {
+                    StyledChar sc = chars.get(i);
+                    switch (style) {
+                        case BOLD -> sc.bold = newValue;
+                        case ITALIC -> sc.italic = newValue;
+                        case UNDERLINE -> sc.underline = newValue;
+                        case STRIKETHROUGH -> sc.strikethrough = newValue;
+                    }
+                }
+            } else {
+                hasPendingOverride = true;
+                boolean active = isStyleActive(style);
+                switch (style) {
+                    case BOLD -> pendingBold = !active;
+                    case ITALIC -> pendingItalic = !active;
+                    case UNDERLINE -> pendingUnderline = !active;
+                    case STRIKETHROUGH -> pendingStrikethrough = !active;
+                }
+            }
+            updateText();
+        }
+
+        public void applyFormattingCode(String code) {
+            StyleType style = switch (code) {
+                case "§l" -> StyleType.BOLD;
+                case "§o" -> StyleType.ITALIC;
+                case "§n" -> StyleType.UNDERLINE;
+                case "§m" -> StyleType.STRIKETHROUGH;
+                default -> null;
+            };
+            if (style != null) {
+                toggleStyle(style);
+            }
+        }
+
+        // --- БЕЗОПАСНОЕ УДАЛЕНИЕ И ВСТАВКА (БЕЗ ПОРЧИ ТЕГОВ) ---
         public void deleteSelection() {
             if (hasSelection()) {
                 int min = getSelectionMin();
                 int max = getSelectionMax();
-                text.delete(min, max);
+                chars.subList(min, max).clear();
                 setCaret(min, false);
             }
         }
 
-        // --- ВВОД И УДАЛЕНИЕ СИМВОЛОВ ---
         public void insertText(String str) {
             deleteSelection();
-            int safeCaret = Math.max(0, Math.min(caret, text.length()));
-            text.insert(safeCaret, str);
-            setCaret(safeCaret + str.length(), false);
+            boolean b = isStyleActive(StyleType.BOLD);
+            boolean i = isStyleActive(StyleType.ITALIC);
+            boolean u = isStyleActive(StyleType.UNDERLINE);
+            boolean m = isStyleActive(StyleType.STRIKETHROUGH);
+
+            int insertIndex = Math.max(0, Math.min(caret, chars.size()));
+            for (char ch : str.toCharArray()) {
+                chars.add(insertIndex++, new StyledChar(ch, b, i, u, m));
+            }
+            setCaret(insertIndex, false);
         }
 
         public void deleteBack() {
             if (hasSelection()) {
                 deleteSelection();
-            } else if (caret > 0 && text.length() > 0) {
-                text.deleteCharAt(caret - 1);
+            } else if (caret > 0 && !chars.isEmpty()) {
+                chars.remove(caret - 1);
                 setCaret(caret - 1, false);
             }
         }
@@ -1917,163 +2206,123 @@ public class SketchbookScreen extends Screen {
         public void deleteForward() {
             if (hasSelection()) {
                 deleteSelection();
-            } else if (caret < text.length()) {
-                text.deleteCharAt(caret);
-                setCaret(caret, true);
-                this.anchor = this.caret;
+            } else if (caret < chars.size()) {
+                chars.remove(caret);
+                setCaret(caret, false);
             }
         }
 
-        // --- НАВИГАЦИЯ КАРЕТКИ С ПОДДЕРЖКОЙ SHIFT И CTRL ---
-        public void moveCursorLeft(boolean select) {
-            moveCursorLeft(select, false);
-        }
-
+        // --- НАВИГАЦИЯ КАРЕТКИ ---
         public void moveCursorLeft(boolean select, boolean ctrl) {
-            if (select) {
-                if (ctrl) {
-                    setCaret(findPreviousWordBoundary(caret), true);
-                } else {
-                    if (caret > 0) setCaret(caret - 1, true);
-                }
-            } else {
-                if (hasSelection()) {
-                    setCaret(getSelectionMin(), false);
-                } else {
-                    if (ctrl) {
-                        setCaret(findPreviousWordBoundary(caret), false);
-                    } else {
-                        if (caret > 0) setCaret(caret - 1, false);
-                    }
-                }
-            }
-        }
-
-        public void moveCursorRight(boolean select) {
-            moveCursorRight(select, false);
+            int nextPos = ctrl ? findPreviousWordBoundary(caret) : Math.max(0, caret - 1);
+            if (!select && hasSelection()) nextPos = getSelectionMin();
+            setCaret(nextPos, select);
         }
 
         public void moveCursorRight(boolean select, boolean ctrl) {
-            if (select) {
-                if (ctrl) {
-                    setCaret(findNextWordBoundary(caret), true);
-                } else {
-                    if (caret < text.length()) setCaret(caret + 1, true);
-                }
-            } else {
-                if (hasSelection()) {
-                    setCaret(getSelectionMax(), false);
-                } else {
-                    if (ctrl) {
-                        setCaret(findNextWordBoundary(caret), false);
-                    } else {
-                        if (caret < text.length()) setCaret(caret + 1, false);
-                    }
-                }
-            }
+            int nextPos = ctrl ? findNextWordBoundary(caret) : Math.min(chars.size(), caret + 1);
+            if (!select && hasSelection()) nextPos = getSelectionMax();
+            setCaret(nextPos, select);
         }
 
-        public void moveCursorHome(boolean select) {
-            moveCursorHome(select, false);
-        }
+        public void moveCursorHome(boolean select, boolean ctrl) { setCaret(0, select); }
+        public void moveCursorEnd(boolean select, boolean ctrl) { setCaret(chars.size(), select); }
 
-        public void moveCursorHome(boolean select, boolean ctrl) {
-            setCaret(0, select);
-        }
-
-        public void moveCursorEnd(boolean select) {
-            moveCursorEnd(select, false);
-        }
-
-        public void moveCursorEnd(boolean select, boolean ctrl) {
-            setCaret(text.length(), select);
-        }
-
-        // --- ХЕЛПЕРЫ СКАНИРОВАНИЯ СЛОВ И ГРАНИЦ (Ctrl + Left / Right) ---
         public int findPreviousWordBoundary(int pos) {
             if (pos <= 0) return 0;
             int p = pos - 1;
-            while (p > 0 && Character.isWhitespace(text.charAt(p))) {
-                p--;
-            }
-            while (p > 0 && Character.isLetterOrDigit(text.charAt(p - 1))) {
-                p--;
-            }
+            while (p > 0 && Character.isWhitespace(chars.get(p).ch)) p--;
+            while (p > 0 && Character.isLetterOrDigit(chars.get(p - 1).ch)) p--;
             return p;
         }
 
         public int findNextWordBoundary(int pos) {
-            int len = text.length();
+            int len = chars.size();
             if (pos >= len) return len;
             int p = pos;
-            while (p < len && Character.isLetterOrDigit(text.charAt(p))) {
-                p++;
-            }
-            while (p < len && Character.isWhitespace(text.charAt(p))) {
-                p++;
-            }
+            while (p < len && Character.isLetterOrDigit(chars.get(p).ch)) p++;
+            while (p < len && Character.isWhitespace(chars.get(p).ch)) p++;
             return p;
         }
 
-        // --- ФОРМАТИРОВАНИЕ ТЕКСТА (B, I, U, S) ---
-        public void applyFormattingCode(String code) {
-            if (hasSelection()) {
-                int min = getSelectionMin();
-                int max = getSelectionMax();
-                String selected = text.substring(min, max);
-
-                if (selected.startsWith(code) && selected.endsWith("§r")) {
-                    String unwrapped = selected.substring(code.length(), selected.length() - 2);
-                    text.replace(min, max, unwrapped);
-                    setCaret(min + unwrapped.length(), false);
-                } else {
-                    String wrapped = code + selected + "§r";
-                    text.replace(min, max, wrapped);
-                    setCaret(min + wrapped.length(), false);
-                }
-            } else {
-                int len = text.length();
-                if (len == 0) {
-                    insertText(code);
-                    return;
-                }
-
-                int start = Math.min(caret, len - 1);
-                while (start < len && Character.isWhitespace(text.charAt(start))) start++;
-
-                if (start >= len) {
-                    start = caret - 1;
-                    while (start >= 0 && Character.isWhitespace(text.charAt(start))) start--;
-                }
-
-                if (start < 0 || start >= len) {
-                    insertText(code);
-                    return;
-                }
-
-                int wordStart = start;
-                while (wordStart > 0 && Character.isLetterOrDigit(text.charAt(wordStart - 1))) wordStart--;
-
-                int wordEnd = start;
-                while (wordEnd < len && Character.isLetterOrDigit(text.charAt(wordEnd))) wordEnd++;
-
-                if (wordStart < wordEnd) {
-                    String word = text.substring(wordStart, wordEnd);
-                    if (word.startsWith(code) && word.endsWith("§r")) {
-                        String unwrapped = word.substring(code.length(), word.length() - 2);
-                        text.replace(wordStart, wordEnd, unwrapped);
-                        setCaret(wordStart + unwrapped.length(), false);
-                    } else {
-                        String wrapped = code + word + "§r";
-                        text.replace(wordStart, wordEnd, wrapped);
-                        setCaret(wordStart + wrapped.length(), false);
-                    }
-                } else {
-                    insertText(code);
-                }
-            }
+        public static class TextLine {
+            public int startCharIndex; // Включительно
+            public int endCharIndex;   // Исключительно
+            public String formattedText;
+            public int width;
         }
+
+        public java.util.List<TextLine> getWrappedLines(net.minecraft.client.gui.Font font, int maxW) {
+            java.util.List<TextLine> lines = new java.util.ArrayList<>();
+            if (chars.isEmpty()) {
+                TextLine empty = new TextLine();
+                empty.startCharIndex = 0;
+                empty.endCharIndex = 0;
+                empty.formattedText = "";
+                empty.width = 0;
+                lines.add(empty);
+                return lines;
+            }
+
+            int currentLineStart = 0;
+            int lastSpaceIndex = -1;
+            int i = 0;
+
+            while (i < chars.size()) {
+                if (chars.get(i).ch == '\n') {
+                    TextLine line = new TextLine();
+                    line.startCharIndex = currentLineStart;
+                    line.endCharIndex = i;
+                    line.formattedText = getFormattedSubstring(currentLineStart, i);
+                    line.width = font.width(line.formattedText);
+                    lines.add(line);
+
+                    i++; // Пропускаем символ переноса '\n'
+                    currentLineStart = i;
+                    lastSpaceIndex = -1;
+                    continue;
+                }
+
+                String currentSub = getFormattedSubstring(currentLineStart, i + 1);
+                if (font.width(currentSub) > maxW && i > currentLineStart) {
+                    int breakAt = i;
+                    if (lastSpaceIndex >= currentLineStart) {
+                        breakAt = lastSpaceIndex + 1; // Перенос по пробелу
+                    }
+
+                    TextLine line = new TextLine();
+                    line.startCharIndex = currentLineStart;
+                    line.endCharIndex = breakAt;
+                    line.formattedText = getFormattedSubstring(currentLineStart, breakAt);
+                    line.width = font.width(line.formattedText);
+                    lines.add(line);
+
+                    currentLineStart = breakAt;
+                    i = breakAt;
+                    lastSpaceIndex = -1;
+                    continue;
+                }
+
+                if (chars.get(i).ch == ' ') {
+                    lastSpaceIndex = i;
+                }
+                i++;
+            }
+
+            if (currentLineStart <= chars.size()) {
+                TextLine line = new TextLine();
+                line.startCharIndex = currentLineStart;
+                line.endCharIndex = chars.size();
+                line.formattedText = getFormattedSubstring(currentLineStart, chars.size());
+                line.width = font.width(line.formattedText);
+                lines.add(line);
+            }
+
+            return lines;
+        }
+
     }
+
 
     private int getActiveTextColorArgb() {
         int hardness = getHardness();

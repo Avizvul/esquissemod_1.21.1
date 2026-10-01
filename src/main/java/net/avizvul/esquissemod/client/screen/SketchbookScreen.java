@@ -665,6 +665,19 @@ public class SketchbookScreen extends Screen {
         if ((hasPencil && isPencilSelected) || (hasColorPencil && isColorPencilSelected)) {
             int activeX = isPencilSelected ? toolCoords.pencilX() : toolCoords.colorPencilX();
             int textSymbolX = activeX + (scaledBtnWidth / 2) - (this.font.width("(T)") / 2);
+            int textSymbolY = peekY - 38;
+
+            boolean isTextSelected = (this.activeTool == Tool.TEXT);
+            int symbolColor = isTextSelected ? 0xFFFFFF00 : (mouseX >= textSymbolX && mouseX < textSymbolX + 16 && mouseY >= textSymbolY && mouseY < textSymbolY + 10 ? 0xFFFFAA00 : 0xFFFFFFFF);
+
+            // Рисуем текст только здесь, где есть guiGraphics
+            guiGraphics.drawString(this.font, "(T)", textSymbolX, textSymbolY, symbolColor, true);
+        }
+
+
+        if ((hasPencil && isPencilSelected) || (hasColorPencil && isColorPencilSelected)) {
+            int activeX = isPencilSelected ? toolCoords.pencilX() : toolCoords.colorPencilX();
+            int textSymbolX = activeX + (scaledBtnWidth / 2) - (this.font.width("(T)") / 2);
             int textSymbolY = peekY - 38; // Размещаем строго над индикатором жесткости
 
             boolean isTextSelected = (this.activeTool == Tool.TEXT);
@@ -1118,12 +1131,18 @@ public class SketchbookScreen extends Screen {
         if ((hasPencil && isPencilSelected) || (hasColorPencil && isColorPencilSelected)) {
             int activeX = isPencilSelected ? toolCoords.pencilX() : toolCoords.colorPencilX();
             int textSymbolX = activeX + (scaledBtnWidth / 2) - (this.font.width("(T)") / 2);
-            int textSymbolY = peekY - 38; // Размещаем строго над индикатором жесткости
+            int textSymbolY = peekY - 38;
 
-            boolean isTextSelected = (this.activeTool == Tool.TEXT);
-            int symbolColor = isTextSelected ? 0xFFFFFF00 : (mouseX >= textSymbolX && mouseX < textSymbolX + 16 && mouseY >= textSymbolY && mouseY < textSymbolY + 10 ? 0xFFFFAA00 : 0xFFFFFFFF);
-
-            guiGraphics.drawString(this.font, "(T)", textSymbolX, textSymbolY, symbolColor, true);
+            // Проверяем только факт клика мышью по значку
+            if (mouseX >= textSymbolX - 2 && mouseX < textSymbolX + 18 && mouseY >= textSymbolY - 2 && mouseY < textSymbolY + 12) {
+                if (this.activeTool == Tool.TEXT) {
+                    this.activeTool = this.previousDrawingTool; // Выключаем текст, возвращаем карандаш
+                } else {
+                    this.previousDrawingTool = this.activeTool; // Запоминаем текущий карандаш
+                    this.activeTool = Tool.TEXT;                // Включаем режим текста
+                }
+                return true;
+            }
         }
 
         // 2. Взаимодействие с активной текстовой рамкой мышью

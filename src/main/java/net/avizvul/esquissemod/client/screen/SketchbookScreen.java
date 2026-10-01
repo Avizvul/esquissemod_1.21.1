@@ -644,46 +644,140 @@ public class SketchbookScreen extends Screen {
 
         guiGraphics.pose().popPose();
 
+        // --- 1. ОТРИСОВКА КНОПОК ИНСТРУМЕНТОВ ---
         ToolButtonCoords toolCoords = getToolButtonCoords();
         int scaledBtnWidth = toolCoords.scaledBtnWidth();
         int scaledBtnHeight = toolCoords.scaledBtnHeight();
         int peekY = toolCoords.peekY();
 
-        if (hasPencil) renderToolButton(guiGraphics, mouseX, mouseY, this.activeTool == Tool.PENCIL, PENCIL_TEX, toolCoords.pencilX());
+        boolean isPencilActive = (this.activeTool == Tool.PENCIL) || (this.activeTool == Tool.TEXT && this.previousDrawingTool == Tool.PENCIL);
+        boolean isColorPencilActive = (this.activeTool == Tool.COLOR_PENCIL) || (this.activeTool == Tool.TEXT && this.previousDrawingTool == Tool.COLOR_PENCIL);
+        boolean isColorMarkerActive = (this.activeTool == Tool.COLOR_MARKER) || (this.activeTool == Tool.TEXT && this.previousDrawingTool == Tool.COLOR_MARKER);
+
+        if (hasPencil) renderToolButton(guiGraphics, mouseX, mouseY, isPencilActive, PENCIL_TEX, toolCoords.pencilX());
         if (hasColorPencil) renderColorToolButton(guiGraphics, mouseX, mouseY, toolCoords.colorPencilX(), colorPencilStack, COLOR_PENCIL_TEX, COLOR_PENCIL_TINT_TEX, Tool.COLOR_PENCIL);
         if (hasColorMarker) renderColorToolButton(guiGraphics, mouseX, mouseY, toolCoords.colorMarkerX(), getColorMarkerStack(), COLOR_MARKER_TEX, COLOR_MARKER_TINT_TEX, Tool.COLOR_MARKER);
         if (hasEraser) renderToolButton(guiGraphics, mouseX, mouseY, this.activeTool == Tool.ERASER, ERASER_TEX, toolCoords.eraserX());
         if (hasKneaded) renderToolButton(guiGraphics, mouseX, mouseY, this.activeTool == Tool.KNEADED_ERASER, KNEADED_ERASER_TEX, toolCoords.kneadedX());
         if (hasSmudge) renderToolButton(guiGraphics, mouseX, mouseY, this.activeTool == Tool.SMUDGE, SMUDGE_TEX, toolCoords.smudgeX());
 
+        // Отрисовка дополнительных инструментов (Линейка, Лупа, Циркуль)
         boolean hasRuler = hasTool(net.avizvul.esquissemod.item.ModItems.RULER.get());
+        boolean hasMagGlass = hasTool(ModItems.MAGNIFYING_GLASS.get());
+        boolean hasCompass = hasTool(ModItems.DRAWING_COMPASS.get());
 
-        // --- КНОПКА РЕЖИМА ТЕКСТА (Т) СТРОГО НАД ВЫБРАННЫМ ИНСТРУМЕНТОМ ---
-        boolean isPencilSelected = (this.activeTool == Tool.PENCIL) || (this.activeTool == Tool.TEXT && this.previousDrawingTool == Tool.PENCIL);
-        boolean isColorPencilSelected = (this.activeTool == Tool.COLOR_PENCIL) || (this.activeTool == Tool.TEXT && this.previousDrawingTool == Tool.COLOR_PENCIL);
+        if (hasRuler) renderToolButton(guiGraphics, mouseX, mouseY, this.isRulerActive, RULER_BTN_TEX, toolCoords.rulerX());
+        if (hasMagGlass) renderToolButton(guiGraphics, mouseX, mouseY, this.isMagnifierLocked, MAGGLASS_BTN_TEX, toolCoords.magGlassX());
+        if (hasCompass) renderToolButton(guiGraphics, mouseX, mouseY, this.compassState != CompassState.INACTIVE, COMPASS_BTN_TEX, toolCoords.compassX());
 
-        if ((hasPencil && isPencilSelected) || (hasColorPencil && isColorPencilSelected)) {
-            int activeX = isPencilSelected ? toolCoords.pencilX() : toolCoords.colorPencilX();
+        // --- 2. ИНДИКАТОРЫ РАЗМЕРА КИСТИ (3 точки над активным инструментом) ---
+        Tool effectiveTool = (this.activeTool == Tool.TEXT) ? this.previousDrawingTool : this.activeTool;
+        int activeToolX = switch (effectiveTool) {
+            case PENCIL -> toolCoords.pencilX();
+            case COLOR_PENCIL -> toolCoords.colorPencilX();
+            case COLOR_MARKER -> toolCoords.colorMarkerX();
+            case ERASER -> toolCoords.eraserX();
+            case KNEADED_ERASER -> toolCoords.kneadedX();
+            case SMUDGE -> toolCoords.smudgeX();
+            default -> -1000;
+        };
+
+        if (activeToolX > -1000) {
+            renderSizeIndicators(guiGraphics, mouseX, mouseY, activeToolX, peekY);
+        }
+
+        // --- 3. ЦВЕТОВАЯ ПАЛИТРА ---
+        if (effectiveTool == Tool.COLOR_PENCIL && !colorPencilStack.isEmpty()) {
+            renderPalette(guiGraphics, colorPencilStack);
+        } else if (effectiveTool == Tool.COLOR_MARKER && !getColorMarkerStack().isEmpty()) {
+            renderPalette(guiGraphics, getColorMarkerStack());
+        }
+
+        // --- 4. КНОПКА ТЕКСТА (Т) СТРОГО НАД ВЫБРАННЫМ КАРАНДАШОМ ---
+        if ((hasPencil && isPencilActive) || (hasColorPencil && isColorPencilActive)) {
+            int activeX = isPencilActive ? toolCoords.pencilX() : toolCoords.colorPencilX();
             int textSymbolX = activeX + (scaledBtnWidth / 2) - (this.font.width("(T)") / 2);
             int textSymbolY = peekY - 38;
 
             boolean isTextSelected = (this.activeTool == Tool.TEXT);
             int symbolColor = isTextSelected ? 0xFFFFFF00 : (mouseX >= textSymbolX && mouseX < textSymbolX + 16 && mouseY >= textSymbolY && mouseY < textSymbolY + 10 ? 0xFFFFAA00 : 0xFFFFFFFF);
 
-            // Рисуем текст только здесь, где есть guiGraphics
             guiGraphics.drawString(this.font, "(T)", textSymbolX, textSymbolY, symbolColor, true);
         }
 
+        // --- 5. ОТРИСОВКА ЛИНЕЙКИ ---
+        if (this.isRulerActive) {
+            guiGraphics.pose().pushPose();
+            guiGraphics.pose().translate(this.rulerX, this.rulerY, 0);
+            guiGraphics.pose().mulPose(com.mojang.math.Axis.ZP.rotationDegrees(this.rulerAngle));
+            guiGraphics.pose().translate(-this.rulerWidth / 2.0, 0, 0);
+            guiGraphics.blit(RULER_TEX, 0, 0, this.rulerWidth, this.rulerHeight, 0.0f, 0.0f, this.rulerWidth, this.rulerHeight, this.rulerWidth, this.rulerHeight);
+            guiGraphics.pose().popPose();
+        }
 
-        if ((hasPencil && isPencilSelected) || (hasColorPencil && isColorPencilSelected)) {
-            int activeX = isPencilSelected ? toolCoords.pencilX() : toolCoords.colorPencilX();
-            int textSymbolX = activeX + (scaledBtnWidth / 2) - (this.font.width("(T)") / 2);
-            int textSymbolY = peekY - 38; // Размещаем строго над индикатором жесткости
+        // --- 6. ТЕКСТОВАЯ РАМКА, КУРСОР И ПАНЕЛЬ ФОРМАТИРОВАНИЯ ---
+        if (this.isTextModeActive && this.activeTextBox != null) {
+            TextBoxState box = this.activeTextBox;
 
-            boolean isTextSelected = (this.activeTool == Tool.TEXT);
-            int symbolColor = isTextSelected ? 0xFFFFFF00 : (mouseX >= textSymbolX && mouseX < textSymbolX + 16 && mouseY >= textSymbolY && mouseY < textSymbolY + 10 ? 0xFFFFAA00 : 0xFFFFFFFF);
+            int canvasLeft = canvasScreenLeft;
+            int canvasTop = renderY;
+            double pCell = (double) this.scale / this.resolutionMultiplier;
 
-            guiGraphics.drawString(this.font, "(T)", textSymbolX, textSymbolY, symbolColor, true);
+            int screenX1 = canvasLeft + (int) (box.x1 * pCell);
+            int screenY1 = canvasTop + (int) (box.y1 * pCell);
+            int screenX2 = canvasLeft + (int) (box.x2 * pCell);
+            int screenY2 = canvasTop + (int) (box.y2 * pCell);
+
+            // Отрисовка пунктирной рамки выделения
+            int dashLen = 4, dashGap = 2, outlineColor = 0xFF007ACC;
+            for (int px = screenX1; px < screenX2; px += dashLen + dashGap) {
+                guiGraphics.fill(px, screenY1, Math.min(px + dashLen, screenX2), screenY1 + 1, outlineColor);
+                guiGraphics.fill(px, screenY2, Math.min(px + dashLen, screenX2), screenY2 + 1, outlineColor);
+            }
+            for (int py = screenY1; py < screenY2; py += dashLen + dashGap) {
+                guiGraphics.fill(screenX1, py, screenX1 + 1, Math.min(py + dashLen, screenY2), outlineColor);
+                guiGraphics.fill(screenX2, py, screenX2 + 1, Math.min(py + dashLen, screenY2), outlineColor);
+            }
+
+            // Угловой маркер изменения размера (юго-восток)
+            int handleSize = 6;
+            guiGraphics.fill(screenX2 - handleSize / 2, screenY2 - handleSize / 2, screenX2 + handleSize / 2, screenY2 + handleSize / 2, 0xFFFFFFFF);
+
+            // Текст с мигающей кареткой ввода
+            StringBuilder previewBuf = new StringBuilder(box.text);
+            if (System.currentTimeMillis() / 500 % 2 == 0) {
+                int insertPos = Math.min(box.cursorPos, previewBuf.length());
+                previewBuf.insert(insertPos, "|");
+            }
+
+            guiGraphics.pose().pushPose();
+            guiGraphics.pose().translate(screenX1 + 2, screenY1 + 2, 0);
+            guiGraphics.pose().scale(box.fontScale, box.fontScale, 1.0f);
+
+            int maxW = (int) ((screenX2 - screenX1 - 4) / box.fontScale);
+            int textColor = getActiveTextColorArgb();
+            guiGraphics.drawWordWrap(this.font, Component.literal(previewBuf.toString()), 0, 0, maxW, textColor);
+            guiGraphics.pose().popPose();
+
+            // Плавающая панель форматирования
+            int toolbarX = screenX1;
+            int toolbarY = screenY2 + 6;
+            int toolbarWidth = 140;
+            int toolbarHeight = 20;
+
+            guiGraphics.fill(toolbarX, toolbarY, toolbarX + toolbarWidth, toolbarY + toolbarHeight, 0xF0222222);
+            guiGraphics.fill(toolbarX - 1, toolbarY - 1, toolbarX + toolbarWidth + 1, toolbarY + toolbarHeight + 1, 0xFF444444);
+
+            drawToolbarButton(guiGraphics, "B", toolbarX + 4, toolbarY + 2, false);
+            drawToolbarButton(guiGraphics, "I", toolbarX + 18, toolbarY + 2, false);
+            drawToolbarButton(guiGraphics, "U", toolbarX + 32, toolbarY + 2, false);
+            drawToolbarButton(guiGraphics, "S", toolbarX + 46, toolbarY + 2, false);
+
+            drawToolbarButton(guiGraphics, "A-", toolbarX + 66, toolbarY + 2, false);
+            drawToolbarButton(guiGraphics, "A+", toolbarX + 82, toolbarY + 2, false);
+
+            guiGraphics.drawString(this.font, "§a✓", toolbarX + 106, toolbarY + 6, 0xFF00FF00, false);
+            guiGraphics.drawString(this.font, "§c✗", toolbarX + 122, toolbarY + 6, 0xFFFF0000, false);
         }
     }
 
@@ -1444,6 +1538,11 @@ public class SketchbookScreen extends Screen {
             }
         }
 
+        if (mouseX >= toolbarX + 4 && mouseX <= toolbarX + 16) { box.applyFormattingCode("§l"); return true; } // B
+        if (mouseX >= toolbarX + 18 && mouseX <= toolbarX + 30) { box.applyFormattingCode("§o"); return true; } // I
+        if (mouseX >= toolbarX + 32 && mouseX <= toolbarX + 44) { box.applyFormattingCode("§n"); return true; } // U
+        if (mouseX >= toolbarX + 46 && mouseX <= toolbarX + 58) { box.applyFormattingCode("§m"); return true; } // S
+
         return super.mouseClicked(mouseX, mouseY, button);
     }
 
@@ -1591,8 +1690,10 @@ public class SketchbookScreen extends Screen {
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        // 1. Полная блокировка хоткеев ТОЛЬКО во время активного ввода текста в рамку
         if (this.isTextModeActive && this.activeTextBox != null) {
             TextBoxState box = this.activeTextBox;
+            boolean hasShift = Screen.hasShiftDown();
 
             if ((keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) && Screen.hasControlDown()) {
                 commitTextToCanvas();
@@ -1607,26 +1708,26 @@ public class SketchbookScreen extends Screen {
                 box.deleteForward();
                 return true;
             } else if (keyCode == GLFW.GLFW_KEY_LEFT) {
-                box.moveCursorLeft();
+                box.moveCursorLeft(hasShift);
                 return true;
             } else if (keyCode == GLFW.GLFW_KEY_RIGHT) {
-                box.moveCursorRight();
+                box.moveCursorRight(hasShift);
                 return true;
             } else if (keyCode == GLFW.GLFW_KEY_HOME) {
-                box.moveCursorHome();
+                box.moveCursorHome(hasShift);
                 return true;
             } else if (keyCode == GLFW.GLFW_KEY_END) {
-                box.moveCursorEnd();
+                box.moveCursorEnd(hasShift);
                 return true;
             } else if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
                 this.isTextModeActive = false;
                 this.activeTextBox = null;
                 return true;
             }
-            return true; // Полная блокировка горячих клавиш инструментов во время ввода
+            return true;
         }
 
-        // Переключение инструментов по хоткеям вне режима текста
+        // 2. Обычная смена инструментов вне активного ввода текста
         boolean hasPencil = hasTool(ModItems.PENCIL.get());
         boolean hasEraser = hasTool(ModItems.ERASER.get());
         boolean hasSmudge = hasTool(ModItems.SMUDGE.get());
@@ -1640,10 +1741,19 @@ public class SketchbookScreen extends Screen {
         if (keyCode == GLFW.GLFW_KEY_S && hasSmudge) { this.activeTool = Tool.SMUDGE; return true; }
         if (keyCode == GLFW.GLFW_KEY_W && hasKneadedEraser) { this.activeTool = Tool.KNEADED_ERASER; return true; }
         if (keyCode == GLFW.GLFW_KEY_V && hasColorMarker) { this.activeTool = Tool.COLOR_MARKER; return true; }
-        if (keyCode == GLFW.GLFW_KEY_T && (hasPencil || hasColorPencil)) { this.activeTool = Tool.TEXT; return true; }
+        if (keyCode == GLFW.GLFW_KEY_T && (hasPencil || hasColorPencil)) {
+            if (this.activeTool == Tool.TEXT) {
+                this.activeTool = this.previousDrawingTool;
+            } else {
+                this.previousDrawingTool = this.activeTool;
+                this.activeTool = Tool.TEXT;
+            }
+            return true;
+        }
 
         return super.keyPressed(keyCode, scanCode, modifiers);
     }
+
 
     @Override
     public boolean keyReleased(int keyCode, int scanCode, int modifiers) {
@@ -1668,48 +1778,158 @@ public class SketchbookScreen extends Screen {
         public int x2, y2;
         public StringBuilder text = new StringBuilder();
         public int cursorPos = 0;
+        public int selectionAnchor = -1; // -1 = нет выделения
         public float fontScale = 1.0f;
 
         public TextBoxState(int startX, int startY) {
             this.x1 = startX;
             this.y1 = startY;
-            this.x2 = 125; // Правая граница автоматически ставится на край холста
+            this.x2 = 125;
             this.y2 = Math.min(191, startY + 40);
             this.cursorPos = 0;
+            this.selectionAnchor = -1;
         }
 
         public int getWidth() { return Math.max(10, Math.abs(x2 - x1)); }
         public int getHeight() { return Math.max(10, Math.abs(y2 - y1)); }
 
-        // Вставка текста строго в позицию курсора
-        public void insertText(String str) {
-            text.insert(cursorPos, str);
-            cursorPos += str.length();
+        public boolean hasSelection() {
+            return selectionAnchor >= 0 && selectionAnchor != cursorPos;
         }
 
-        // Удаление символа перед курсором (Backspace)
+        public int getSelectionMin() {
+            return hasSelection() ? Math.min(selectionAnchor, cursorPos) : cursorPos;
+        }
+
+        public int getSelectionMax() {
+            return hasSelection() ? Math.max(selectionAnchor, cursorPos) : cursorPos;
+        }
+
+        public void deleteSelection() {
+            if (hasSelection()) {
+                int min = getSelectionMin();
+                int max = getSelectionMax();
+                text.delete(min, max);
+                cursorPos = min;
+                selectionAnchor = -1;
+            }
+        }
+
+        public void insertText(String str) {
+            deleteSelection();
+            text.insert(cursorPos, str);
+            cursorPos += str.length();
+            selectionAnchor = -1;
+        }
+
         public void deleteBack() {
-            if (cursorPos > 0 && text.length() > 0) {
+            if (hasSelection()) {
+                deleteSelection();
+            } else if (cursorPos > 0 && text.length() > 0) {
                 text.deleteCharAt(cursorPos - 1);
                 cursorPos--;
             }
         }
 
-        // Удаление символа после курсора (Delete)
         public void deleteForward() {
-            if (cursorPos < text.length()) {
+            if (hasSelection()) {
+                deleteSelection();
+            } else if (cursorPos < text.length()) {
                 text.deleteCharAt(cursorPos);
             }
         }
 
-        // Навигация курсора
-        public void moveCursorLeft() { if (cursorPos > 0) cursorPos--; }
-        public void moveCursorRight() { if (cursorPos < text.length()) cursorPos++; }
-        public void moveCursorHome() { cursorPos = 0; }
-        public void moveCursorEnd() { cursorPos = text.length(); }
+        public void moveCursorLeft(boolean select) {
+            if (select) {
+                if (selectionAnchor == -1) selectionAnchor = cursorPos;
+            } else {
+                if (hasSelection()) cursorPos = getSelectionMin();
+                selectionAnchor = -1;
+            }
+            if (cursorPos > 0) cursorPos--;
+        }
 
-        public void toggleFormatCode(String code) {
-            insertText(code);
+        public void moveCursorRight(boolean select) {
+            if (select) {
+                if (selectionAnchor == -1) selectionAnchor = cursorPos;
+            } else {
+                if (hasSelection()) cursorPos = getSelectionMax();
+                selectionAnchor = -1;
+            }
+            if (cursorPos < text.length()) cursorPos++;
+        }
+
+        public void moveCursorHome(boolean select) {
+            if (select) {
+                if (selectionAnchor == -1) selectionAnchor = cursorPos;
+            } else selectionAnchor = -1;
+            cursorPos = 0;
+        }
+
+        public void moveCursorEnd(boolean select) {
+            if (select) {
+                if (selectionAnchor == -1) selectionAnchor = cursorPos;
+            } else selectionAnchor = -1;
+            cursorPos = text.length();
+        }
+
+        // Умное форматирование по логике Word / Photoshop
+        public void applyFormattingCode(String code) {
+            if (hasSelection()) {
+                int min = getSelectionMin();
+                int max = getSelectionMax();
+                String selected = text.substring(min, max);
+
+                if (selected.startsWith(code) && selected.endsWith("§r")) {
+                    String unwrapped = selected.substring(code.length(), selected.length() - 2);
+                    text.replace(min, max, unwrapped);
+                    cursorPos = min + unwrapped.length();
+                } else {
+                    String wrapped = code + selected + "§r";
+                    text.replace(min, max, wrapped);
+                    cursorPos = min + wrapped.length();
+                }
+                selectionAnchor = -1;
+            } else {
+                int len = text.length();
+                if (len == 0) {
+                    insertText(code);
+                    return;
+                }
+
+                int start = Math.min(cursorPos, len - 1);
+                while (start < len && Character.isWhitespace(text.charAt(start))) start++;
+                if (start >= len) {
+                    start = cursorPos - 1;
+                    while (start >= 0 && Character.isWhitespace(text.charAt(start))) start--;
+                }
+
+                if (start < 0 || start >= len) {
+                    insertText(code);
+                    return;
+                }
+
+                int wordStart = start;
+                while (wordStart > 0 && Character.isLetterOrDigit(text.charAt(wordStart - 1))) wordStart--;
+
+                int wordEnd = start;
+                while (wordEnd < len && Character.isLetterOrDigit(text.charAt(wordEnd))) wordEnd++;
+
+                if (wordStart < wordEnd) {
+                    String word = text.substring(wordStart, wordEnd);
+                    if (word.startsWith(code) && word.endsWith("§r")) {
+                        String unwrapped = word.substring(code.length(), word.length() - 2);
+                        text.replace(wordStart, wordEnd, unwrapped);
+                        cursorPos = wordStart + unwrapped.length();
+                    } else {
+                        String wrapped = code + word + "§r";
+                        text.replace(wordStart, wordEnd, wrapped);
+                        cursorPos = wordStart + wrapped.length();
+                    }
+                } else {
+                    insertText(code);
+                }
+            }
         }
     }
 
@@ -1767,8 +1987,8 @@ public class SketchbookScreen extends Screen {
         );
 
         if (textPixels != null && textPixels.length > 0) {
-            int w = textPixels.length;
-            int h = textPixels.length; // Исправлено: считываем реальную высоту массива
+            int w = textPixels.length;          // Ширина прямоугольного массива (например, 125)
+            int h = textPixels.length;       // ИСПРАВЛЕНИЕ: Реальная высота массива (например, 40)
 
             for (int x = 0; x < w; x++) {
                 for (int y = 0; y < h; y++) {
@@ -1788,6 +2008,7 @@ public class SketchbookScreen extends Screen {
         this.isTextModeActive = false;
         this.activeTextBox = null;
     }
+
 
     @Override
     public void onClose() {

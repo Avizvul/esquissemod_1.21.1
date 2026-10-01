@@ -56,14 +56,15 @@ public class SketchbookPayloadHandler {
             if (!stack.is(ModItems.SKETCHBOOK.get())) {
                 stack = player.getOffhandItem();
             }
-
             if (stack.is(ModItems.SKETCHBOOK.get())) {
                 List<SketchData> pages = new ArrayList<>(stack.getOrDefault(ModDataComponents.SKETCHBOOK_PAGES.get(), new ArrayList<>()));
                 if (payload.pageIndex() >= 0 && payload.pageIndex() < pages.size()) {
-                    SketchData tornData = pages.remove(payload.pageIndex());
+                    pages.remove(payload.pageIndex());
+
+                    SketchData tornData = payload.sketchData();
                     ItemStack tornPage;
 
-                    if (tornData.isEmpty()) {
+                    if (tornData == null || tornData.isEmpty()) {
                         tornPage = new ItemStack(ModItems.EMPTY_PAGE.get());
                     } else {
                         tornPage = new ItemStack(ModItems.SKETCHED_PAGE.get());

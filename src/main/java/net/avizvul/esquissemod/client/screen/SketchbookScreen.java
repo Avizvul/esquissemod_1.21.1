@@ -317,27 +317,40 @@ public class SketchbookScreen extends Screen {
         if (!stack.is(ModItems.SKETCHBOOK.get())) {
             stack = this.minecraft.player.getOffhandItem();
         }
-        java.util.List<net.avizvul.esquissemod.component.SketchData> pages =
+        java.util.List<net.avizvul.esquissemod.component.SketchData> pagesList =
                 new java.util.ArrayList<>(stack.getOrDefault(ModDataComponents.SKETCHBOOK_PAGES.get(), new java.util.ArrayList<>()));
 
-        if (newPageIndex < 0 || newPageIndex >= pages.size()) {
+        if (newPageIndex < 0 || newPageIndex >= pagesList.size()) {
             return;
         }
 
-        if (this.currentPageIndex >= 0 && this.currentPageIndex < pages.size()) {
+        // 1. Запекаем текст, если пользователем открыто текстовое поле
+        if (this.isTextModeActive && this.activeTextBox != null) {
+            commitTextToCanvas();
+        }
+
+        // 2. Сохраняем текущую страницу
+        if (this.currentPageIndex >= 0 && this.currentPageIndex < pagesList.size()) {
             net.avizvul.esquissemod.component.SketchData data = net.avizvul.esquissemod.component.SketchData.fromArrayAndTexts(this.pixels, this.textElements);
-            pages.set(this.currentPageIndex, data);
-            stack.set(ModDataComponents.SKETCHBOOK_PAGES.get(), pages);
+            pagesList.set(this.currentPageIndex, data);
+            stack.set(ModDataComponents.SKETCHBOOK_PAGES.get(), pagesList);
+
             net.neoforged.neoforge.network.PacketDistributor.sendToServer(
                     new SketchbookSavePayload(this.currentPageIndex, data, this.pencilPixelsUsed, this.eraserPixelsUsed)
             );
         }
 
+        // 3. Переключаем индекс и обновляем поля
         this.currentPageIndex = newPageIndex;
-        int w = this.canvasWidth * this.resolutionMultiplier;
-        int h = this.canvasHeight * this.resolutionMultiplier;
-        this.pixels = pages.get(this.currentPageIndex).toArray(w, h);
-        this.isCanvasDirty = true;
+        this.pages = pagesList;
+
+        // 4. Загружаем пиксели и векторный текст новой страницы
+        loadPagePixels();
+
+        // 5. Звук перелистывания
+        if (this.minecraft != null && this.minecraft.player != null) {
+            this.minecraft.player.playSound(net.minecraft.sounds.SoundEvents.BOOK_PAGE_TURN, 1.0f, 1.0f);
+        }
     }
 
     private void clampSketchbook() {
@@ -1382,21 +1395,26 @@ public class SketchbookScreen extends Screen {
         int tearHitMargin = 4; // Расширяем область клика на 4px для удобства
         if (lMouseX >= (blueZoneLeft - tearHitMargin) && lMouseX <= (blueZoneLeft + blueZoneWidth + tearHitMargin) && lMouseY >= blueZoneTop && lMouseY <= blueZoneBottom) {
             if (button == 0 || button == 1) {
-                // 1. Сохраняем пиксели и векторный текст перед отрывом
+                if (this.isTextModeActive && this.activeTextBox != null) {
+                    commitTextToCanvas();
+                }
+
                 SketchData currentData = SketchData.fromArrayAndTexts(this.pixels, this.textElements);
+
+                // 1. Отправляем сохранение и пакет отрыва с рисунком на сервер
                 net.neoforged.neoforge.network.PacketDistributor.sendToServer(
                         new SketchbookSavePayload(this.currentPageIndex, currentData, this.pencilPixelsUsed, this.eraserPixelsUsed)
                 );
+                net.neoforged.neoforge.network.PacketDistributor.sendToServer(
+                        new TearPagePayload(this.currentPageIndex, currentData)
+                );
 
-                // 2. Отправляем пакет отрыва на сервер
-                net.neoforged.neoforge.network.PacketDistributor.sendToServer(new TearPagePayload(this.currentPageIndex));
-
-                // 3. Звуковой эффект
+                // 2. Звуковой эффект
                 if (this.minecraft != null && this.minecraft.player != null) {
                     this.minecraft.player.playSound(net.minecraft.sounds.SoundEvents.BOOK_PAGE_TURN, 1.0f, 1.0f);
                 }
 
-                // 4. Локальное удаление и перезагрузка страницы
+                // 3. Локальное удаление и перезагрузка
                 if (this.pages != null && !this.pages.isEmpty() && this.currentPageIndex >= 0 && this.currentPageIndex < this.pages.size()) {
                     this.pages.remove(this.currentPageIndex);
 
@@ -1418,6 +1436,7 @@ public class SketchbookScreen extends Screen {
                 return true;
             }
         }
+
 
         // 1. Клик по кнопке "(Т)" над выбранным карандашом
         boolean isPencilSelected = (this.activeTool == Tool.PENCIL) || (this.activeTool == Tool.TEXT && this.previousDrawingTool == Tool.PENCIL);
@@ -2403,6 +2422,11 @@ public class SketchbookScreen extends Screen {
         savedRotationAngle = this.rotationAngle;
         hasSavedState = true;
 
+        // Автоматическое запекание активного текста перед закрытием
+        if (this.isTextModeActive && this.activeTextBox != null) {
+            commitTextToCanvas();
+        }
+
         SketchData data = SketchData.fromArrayAndTexts(this.pixels, this.textElements);
 
         if (this.minecraft != null && this.minecraft.player != null) {
@@ -2411,17 +2435,20 @@ public class SketchbookScreen extends Screen {
                 stack = this.minecraft.player.getOffhandItem();
             }
             if (stack.is(net.avizvul.esquissemod.item.ModItems.SKETCHBOOK.get())) {
-                java.util.List<net.avizvul.esquissemod.component.SketchData> pages =
+                java.util.List<net.avizvul.esquissemod.component.SketchData> pagesList =
                         new java.util.ArrayList<>(stack.getOrDefault(ModDataComponents.SKETCHBOOK_PAGES.get(), new java.util.ArrayList<>()));
-                if (this.currentPageIndex >= 0 && this.currentPageIndex < pages.size()) {
-                    pages.set(this.currentPageIndex, data);
-                    stack.set(ModDataComponents.SKETCHBOOK_PAGES.get(), pages);
+
+                if (this.currentPageIndex >= 0 && this.currentPageIndex < pagesList.size()) {
+                    pagesList.set(this.currentPageIndex, data);
+                    stack.set(ModDataComponents.SKETCHBOOK_PAGES.get(), pagesList);
                     stack.set(ModDataComponents.LAST_PAGE.get(), this.currentPageIndex);
                 }
             }
         }
 
-        net.neoforged.neoforge.network.PacketDistributor.sendToServer(new SketchbookSavePayload(this.currentPageIndex, data, this.pencilPixelsUsed, this.eraserPixelsUsed));
+        net.neoforged.neoforge.network.PacketDistributor.sendToServer(
+                new SketchbookSavePayload(this.currentPageIndex, data, this.pencilPixelsUsed, this.eraserPixelsUsed)
+        );
 
         if (this.activeCanvasId != null) {
             net.minecraft.client.Minecraft.getInstance().getTextureManager().release(this.activeCanvasId);
@@ -2432,6 +2459,7 @@ public class SketchbookScreen extends Screen {
         savedRulerY = this.rulerY;
         savedRulerAngle = this.rulerAngle;
         wasRulerActive = this.isRulerActive;
+
         savedCompassState = this.compassState;
         savedCompassAnchorX = this.compassAnchorX;
         savedCompassAnchorY = this.compassAnchorY;

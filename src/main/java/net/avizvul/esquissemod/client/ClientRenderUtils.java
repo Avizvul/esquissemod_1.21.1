@@ -22,7 +22,7 @@ public class ClientRenderUtils {
             guiGraphics.blit(texture, startX, startY, 0.0f, 0.0f, drawWidth, drawHeight, drawWidth, drawHeight);
         }
 
-        // 2. Отрисовка векторного текста поверх растра
+        // 2. Отрисовка векторного текста поверх растра с учетом отступа +2px
         List<TextElement> texts = data.getTextElements();
         if (texts != null && !texts.isEmpty()) {
             Font font = Minecraft.getInstance().font;
@@ -30,11 +30,12 @@ public class ClientRenderUtils {
             double scaleY = (double) drawHeight / 192.0;
 
             for (TextElement elem : texts) {
-                int elemX = startX + (int) (elem.x() * scaleX);
-                int elemY = startY + (int) (elem.y() * scaleY);
+                // Синхронизируем отступ +2px с альбомом SketchbookScreen
+                int elemX = startX + (int) ((elem.x() + 2) * scaleX);
+                int elemY = startY + (int) ((elem.y() + 2) * scaleY);
 
                 Component comp = Component.literal(elem.text());
-                int maxW = Math.max(10, (int) ((125 - elem.x()) * scaleX / elem.scale()));
+                int maxW = Math.max(10, (int) ((125 - elem.x() - 2) * scaleX / elem.scale()));
                 List<FormattedCharSequence> lines = font.split(comp, maxW);
 
                 int lineH = (int) (9 * elem.scale() * scaleY);

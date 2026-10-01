@@ -947,6 +947,11 @@ public class SketchbookScreen extends Screen {
             guiGraphics.fill(toolbarX + 82, toolbarY + 3, toolbarX + 94, toolbarY + 17, 0x40FFFFFF);
             guiGraphics.drawString(this.font, "+", toolbarX + 86, toolbarY + 5, 0xFFFFFFFF, false);
 
+            // КНОПКА ПРОЗРАЧНОСТИ H/M/S (между + и ✓)
+            String opacityLabel = (box.textOpacityLevel == 3) ? "H" : (box.textOpacityLevel == 2) ? "M" : "S";
+            guiGraphics.fill(toolbarX + 92, toolbarY + 3, toolbarX + 104, toolbarY + 17, 0xFF007ACC);
+            guiGraphics.drawString(this.font, opacityLabel, toolbarX + 96, toolbarY + 5, 0xFFFFFFFF, false);
+
             // Кнопка «Применить» (✓)
             guiGraphics.fill(toolbarX + 104, toolbarY + 3, toolbarX + 116, toolbarY + 17, 0xFF228B22);
             guiGraphics.drawString(this.font, "v", toolbarX + 108, toolbarY + 5, 0xFFFFFFFF, false);
@@ -955,6 +960,31 @@ public class SketchbookScreen extends Screen {
             guiGraphics.fill(toolbarX + 120, toolbarY + 3, toolbarX + 132, toolbarY + 17, 0xFFB22222);
             guiGraphics.drawString(this.font, "x", toolbarX + 124, toolbarY + 5, 0xFFFFFFFF, false);
 
+            // 2. Нижняя панель цветов (2 ряда по 8 квадратиков 5x5 px)
+            boolean hasColorPencil = !getColorPencilStack().isEmpty();
+            if (hasColorPencil) {
+                int colorBarY = toolbarY + 20;
+                guiGraphics.fill(toolbarX, colorBarY, toolbarX + 138, colorBarY + 18, 0xE0000000);
+
+                for (int row = 0; row < 2; row++) {
+                    for (int col = 0; col < 8; col++) {
+                        int colorId = row * 8 + col;
+                        int cx = toolbarX + 6 + col * 8;
+                        int cy = colorBarY + 3 + row * 7;
+
+                        int rgb = net.minecraft.world.item.DyeColor.byId(colorId).getTextureDiffuseColor() | 0xFF000000;
+                        boolean isSelected = (box.pendingColorId == colorId);
+
+                        // Окантовка для активного цвета
+                        if (isSelected) {
+                            guiGraphics.fill(cx - 1, cy - 1, cx + 6, cy + 6, 0xFFFFFFFF);
+                        }
+                        guiGraphics.fill(cx, cy, cx + 5, cy + 5, rgb);
+                    }
+
+
+                }
+            }
         }
     }
 
@@ -1394,7 +1424,7 @@ public class SketchbookScreen extends Screen {
         // --- ОБЩАЯ ПРОВЕРКА ОТРЫВА СТРАНИЦЫ (ЛКМ И ПКМ) ---
         int tearHitMargin = 4; // Расширяем область клика на 4px для удобства
         if (lMouseX >= (blueZoneLeft - tearHitMargin) && lMouseX <= (blueZoneLeft + blueZoneWidth + tearHitMargin) && lMouseY >= blueZoneTop && lMouseY <= blueZoneBottom) {
-            if (button == 0 || button == 1) {
+            if (button == 1) {
                 if (this.isTextModeActive && this.activeTextBox != null) {
                     commitTextToCanvas();
                 }
@@ -2005,37 +2035,49 @@ public class SketchbookScreen extends Screen {
         public boolean italic;
         public boolean underline;
         public boolean strikethrough;
+        public int colorId; // -1 = стандартный цвет, 0..15 = ID красителя DyeColor
 
-        public StyledChar(char ch, boolean bold, boolean italic, boolean underline, boolean strikethrough) {
+        public StyledChar(char ch, boolean bold, boolean italic, boolean underline, boolean strikethrough, int colorId) {
             this.ch = ch;
             this.bold = bold;
             this.italic = italic;
             this.underline = underline;
             this.strikethrough = strikethrough;
+            this.colorId = colorId;
         }
     }
 
     public static class TextBoxState {
+
         public int x1, y1;
         public int x2, y2;
 
-        // Массив видимых пользовательских символов (без тегов §)
         public java.util.List<StyledChar> chars = new java.util.ArrayList<>();
-        public StringBuilder text = new StringBuilder(); // Синхронизированная Minecraft-строка с §
+        public StringBuilder text = new StringBuilder();
 
         public int anchor = 0;
         public int caret = 0;
         public int cursorPos = 0;
         public float fontScale = 1.0f;
 
-        // Переключатели стиля для печати в пустой позиции
+        // Уровень прозрачности: 3 = 100% (H), 2 = 66% (M), 1 = 33% (S)
+        public int textOpacityLevel = 3;
+
+        // Стили по умолчанию для ввода
         public boolean pendingBold = false;
         public boolean pendingItalic = false;
         public boolean pendingUnderline = false;
         public boolean pendingStrikethrough = false;
+        public int pendingColorId = -1;
         public boolean hasPendingOverride = false;
 
         public enum StyleType { BOLD, ITALIC, UNDERLINE, STRIKETHROUGH }
+
+        // Массив formatting-тегов Minecraft для 16 красителей
+        private static final String[] COLOR_CODES = {
+            "§f", "§6", "§d", "§b", "§e", "§a", "§d", "§8",
+                    "§7", "§3", "§5", "§9", "§6", "§2", "§c", "§0"
+        };
 
         public TextBoxState(int startX, int startY) {
             this.x1 = startX;
@@ -2051,7 +2093,24 @@ public class SketchbookScreen extends Screen {
         public int getWidth() { return Math.max(10, Math.abs(x2 - x1)); }
         public int getHeight() { return Math.max(10, Math.abs(y2 - y1)); }
 
-        // --- СИНХРОНИЗАЦИЯ И СБОРКА СТРОК С ТЕГАМИ § ---
+        public void cycleOpacity() {
+            this.textOpacityLevel = (this.textOpacityLevel % 3) + 1; // 1 -> 2 -> 3 -> 1
+        }
+
+        public void applyColor(int colorId) {
+            if (hasSelection()) {
+                int min = getSelectionMin();
+                int max = getSelectionMax();
+                for (int i = min; i < max; i++) {
+                    chars.get(i).colorId = colorId;
+                }
+            } else {
+                this.hasPendingOverride = true;
+                this.pendingColorId = colorId;
+            }
+            updateText();
+        }
+
         public void updateText() {
             this.text = new StringBuilder(toFormattedString());
             this.cursorPos = this.caret;
@@ -2068,24 +2127,34 @@ public class SketchbookScreen extends Screen {
 
             StringBuilder sb = new StringBuilder();
             boolean curB = false, curI = false, curU = false, curM = false;
+            int curColor = -1;
 
             for (int idx = s; idx < e; idx++) {
                 StyledChar sc = chars.get(idx);
+
                 if (sc.ch == '\n') {
-                    if (curB || curI || curU || curM) {
+                    if (curB || curI || curU || curM || curColor != -1) {
                         sb.append("§r");
                         curB = curI = curU = curM = false;
+                        curColor = -1;
                     }
                     sb.append('\n');
                     continue;
                 }
 
                 boolean needReset = (curB && !sc.bold) || (curI && !sc.italic)
-                        || (curU && !sc.underline) || (curM && !sc.strikethrough);
+                        || (curU && !sc.underline) || (curM && !sc.strikethrough)
+                        || (curColor != -1 && sc.colorId != curColor);
 
                 if (needReset) {
                     sb.append("§r");
                     curB = curI = curU = curM = false;
+                    curColor = -1;
+                }
+
+                if (sc.colorId >= 0 && sc.colorId < 16 && sc.colorId != curColor) {
+                    sb.append(COLOR_CODES[sc.colorId]);
+                    curColor = sc.colorId;
                 }
 
                 if (sc.bold && !curB) { sb.append("§l"); curB = true; }
@@ -2096,13 +2165,13 @@ public class SketchbookScreen extends Screen {
                 sb.append(sc.ch);
             }
 
-            if (curB || curI || curU || curM) {
+            if (curB || curI || curU || curM || curColor != -1) {
                 sb.append("§r");
             }
+
             return sb.toString();
         }
 
-        // --- УПРАВЛЕНИЕ ВЫДЕЛЕНИЕМ И КАРЕТКОЙ ---
         public boolean hasSelection() { return anchor != caret; }
         public int getSelectionMin() { return Math.min(anchor, caret); }
         public int getSelectionMax() { return Math.max(anchor, caret); }
@@ -2116,7 +2185,6 @@ public class SketchbookScreen extends Screen {
             updateText();
         }
 
-        // --- ПРОВЕРКА АКТИВНОСТИ СТИЛЯ ДЛЯ ПОДСВЕТКИ КНОПОК ---
         public boolean isStyleActive(StyleType style) {
             if (hasSelection()) {
                 int min = getSelectionMin();
@@ -2155,14 +2223,12 @@ public class SketchbookScreen extends Screen {
             }
         }
 
-        // --- ПЕРЕКЛЮЧЕНИЕ СТИЛЕЙ (TOGGLE LOGIC) ---
         public void toggleStyle(StyleType style) {
             if (hasSelection()) {
                 int min = getSelectionMin();
                 int max = getSelectionMax();
                 boolean currentlyActive = isStyleActive(style);
                 boolean newValue = !currentlyActive;
-
                 for (int i = min; i < max; i++) {
                     StyledChar sc = chars.get(i);
                     switch (style) {
@@ -2198,7 +2264,21 @@ public class SketchbookScreen extends Screen {
             }
         }
 
-        // --- БЕЗОПАСНОЕ УДАЛЕНИЕ И ВСТАВКА (БЕЗ ПОРЧИ ТЕГОВ) ---
+        public void insertText(String str) {
+            deleteSelection();
+            boolean b = isStyleActive(StyleType.BOLD);
+            boolean i = isStyleActive(StyleType.ITALIC);
+            boolean u = isStyleActive(StyleType.UNDERLINE);
+            boolean m = isStyleActive(StyleType.STRIKETHROUGH);
+            int col = pendingColorId;
+
+            int insertIndex = Math.max(0, Math.min(caret, chars.size()));
+            for (char ch : str.toCharArray()) {
+                chars.add(insertIndex++, new StyledChar(ch, b, i, u, m, col));
+            }
+            setCaret(insertIndex, false);
+        }
+
         public void deleteSelection() {
             if (hasSelection()) {
                 int min = getSelectionMin();
@@ -2206,20 +2286,6 @@ public class SketchbookScreen extends Screen {
                 chars.subList(min, max).clear();
                 setCaret(min, false);
             }
-        }
-
-        public void insertText(String str) {
-            deleteSelection();
-            boolean b = isStyleActive(StyleType.BOLD);
-            boolean i = isStyleActive(StyleType.ITALIC);
-            boolean u = isStyleActive(StyleType.UNDERLINE);
-            boolean m = isStyleActive(StyleType.STRIKETHROUGH);
-
-            int insertIndex = Math.max(0, Math.min(caret, chars.size()));
-            for (char ch : str.toCharArray()) {
-                chars.add(insertIndex++, new StyledChar(ch, b, i, u, m));
-            }
-            setCaret(insertIndex, false);
         }
 
         public void deleteBack() {
@@ -2240,7 +2306,6 @@ public class SketchbookScreen extends Screen {
             }
         }
 
-        // --- НАВИГАЦИЯ КАРЕТКИ ---
         public void moveCursorLeft(boolean select, boolean ctrl) {
             int nextPos = ctrl ? findPreviousWordBoundary(caret) : Math.max(0, caret - 1);
             if (!select && hasSelection()) nextPos = getSelectionMin();
@@ -2273,6 +2338,7 @@ public class SketchbookScreen extends Screen {
             return p;
         }
 
+        // --- ВЛОЖЕННЫЙ КЛАСС ДЛЯ СТРОК ---
         public static class TextLine {
             public int startCharIndex; // Включительно
             public int endCharIndex;   // Исключительно
@@ -2280,6 +2346,7 @@ public class SketchbookScreen extends Screen {
             public int width;
         }
 
+        // --- МЕТОД РАЗБИЕНИЯ ТЕКСТА НА СТРОКИ ---
         public java.util.List<TextLine> getWrappedLines(net.minecraft.client.gui.Font font, int maxW) {
             java.util.List<TextLine> lines = new java.util.ArrayList<>();
             if (chars.isEmpty()) {
@@ -2348,8 +2415,8 @@ public class SketchbookScreen extends Screen {
 
             return lines;
         }
-
     }
+
 
 
     private int getActiveTextColorArgb() {

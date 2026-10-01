@@ -1162,6 +1162,7 @@ public class SketchbookScreen extends Screen {
         }
     }
 
+
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         boolean hasPencil = hasTool(ModItems.PENCIL.get());
@@ -1367,7 +1368,43 @@ public class SketchbookScreen extends Screen {
 
         // 5. Правый клик (ПКМ) — Смена твёрдости по кругу и быстрый сброс утилит
         if (button == 1) {
-            // Проверка клика ПКМ по инструментам рисования
+            // 1) Сброс фиксации лупы при клике ПКМ в любой точке экрана
+            if (this.isMagnifierLocked) {
+                this.isMagnifierLocked = false;
+                this.isMagnifyingMode = false;
+                return true;
+            }
+
+            // 2) ПКМ непосредственно по самой линейке на холсте — убирает её
+            if (this.isRulerActive && !this.isQuickRulerMode) {
+                double dx = mouseX - this.rulerX;
+                double dy = mouseY - this.rulerY;
+                double rad = Math.toRadians(-this.rulerAngle);
+                double localX = dx * Math.cos(rad) - dy * Math.sin(rad);
+                double localY = dx * Math.sin(rad) + dy * Math.cos(rad);
+
+                if (Math.abs(localX) <= this.rulerWidth / 2.0 && localY >= 0 && localY <= this.rulerHeight) {
+                    this.isRulerActive = false;
+                    this.isQuickRulerMode = false;
+                    return true;
+                }
+            }
+
+            // 3) Пошаговый сброс состояний циркуля при клике ПКМ по холсту (LOCKED -> ANCHORED -> FOLDED -> INACTIVE)
+            if (this.compassState != CompassState.INACTIVE) {
+                if (this.compassState == CompassState.LOCKED) {
+                    this.compassState = CompassState.ANCHORED;
+                    return true;
+                } else if (this.compassState == CompassState.ANCHORED) {
+                    this.compassState = CompassState.FOLDED;
+                    return true;
+                } else if (this.compassState == CompassState.FOLDED) {
+                    this.compassState = CompassState.INACTIVE;
+                    return true;
+                }
+            }
+
+            // 4) ПКМ по кнопкам рисовочных инструментов — переключение твёрдости по кругу (1 -> 2 -> 3)
             boolean clickedPencil = hasPencil && mouseX >= pencilX && mouseX < pencilX + scaledBtnWidth && mouseY >= peekY && mouseY < peekY + scaledBtnHeight;
             boolean clickedColorPencil = hasColorPencil && mouseX >= colorPencilX && mouseX < colorPencilX + scaledBtnWidth && mouseY >= peekY && mouseY < peekY + scaledBtnHeight;
             boolean clickedColorMarker = hasColorMarker && mouseX >= colorMarkerX && mouseX < colorMarkerX + scaledBtnWidth && mouseY >= peekY && mouseY < peekY + scaledBtnHeight;
@@ -1383,30 +1420,14 @@ public class SketchbookScreen extends Screen {
                 else if (clickedSmudge) this.activeTool = Tool.SMUDGE;
                 else if (clickedKneaded) this.activeTool = Tool.KNEADED_ERASER;
 
-                // Циклическое переключение твёрдости 1 -> 2 -> 3 -> 1
                 int nextHardness = (getHardness() % 3) + 1;
                 setToolSettings(getBrushSize(), nextHardness, getMarkerRotation());
-                return true;
-            }
-
-            // Деактивация утилит ПКМ
-            if (hasRuler && mouseX >= rulerX && mouseX < rulerX + scaledBtnWidth && mouseY >= peekY && mouseY < peekY + scaledBtnHeight) {
-                this.isRulerActive = false;
-                return true;
-            }
-            if (hasMagGlass && mouseX >= magGlassX && mouseX < magGlassX + scaledBtnWidth && mouseY >= peekY && mouseY < peekY + scaledBtnHeight) {
-                this.isMagnifierLocked = false;
-                return true;
-            }
-            if (hasCompass && mouseX >= compassX && mouseX < compassX + scaledBtnWidth && mouseY >= peekY && mouseY < peekY + scaledBtnHeight) {
-                this.compassState = CompassState.INACTIVE;
                 return true;
             }
         }
 
         return super.mouseClicked(mouseX, mouseY, button);
     }
-
 
     @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
@@ -1550,9 +1571,10 @@ public class SketchbookScreen extends Screen {
         return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
     }
 
+
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        // 1. Полная блокировка хоткеев ТОЛЬКО во время активного ввода текста в рамку
+        // 1. Полная блокировка хоткеев во время активного ввода текста в текстовое поле
         if (this.isTextModeActive && this.activeTextBox != null) {
             TextBoxState box = this.activeTextBox;
             boolean hasShift = Screen.hasShiftDown();
@@ -1589,13 +1611,17 @@ public class SketchbookScreen extends Screen {
             return true;
         }
 
-        // 2. Обычная смена инструментов вне активного ввода текста
+        // 2. Переключение основных инструментов рисования
         boolean hasPencil = hasTool(ModItems.PENCIL.get());
         boolean hasEraser = hasTool(ModItems.ERASER.get());
         boolean hasSmudge = hasTool(ModItems.SMUDGE.get());
         boolean hasKneadedEraser = hasTool(ModItems.KNEADED_ERASER.get());
         boolean hasColorPencil = !getColorPencilStack().isEmpty();
         boolean hasColorMarker = hasTool(ModItems.COLOR_MARKER.get());
+
+        boolean hasRuler = hasTool(ModItems.RULER.get());
+        boolean hasMagGlass = hasTool(ModItems.MAGNIFYING_GLASS.get());
+        boolean hasCompass = hasTool(ModItems.DRAWING_COMPASS.get());
 
         if (keyCode == GLFW.GLFW_KEY_B && hasPencil) { this.activeTool = Tool.PENCIL; return true; }
         if (keyCode == GLFW.GLFW_KEY_C && hasColorPencil) { this.activeTool = Tool.COLOR_PENCIL; return true; }
@@ -1613,9 +1639,52 @@ public class SketchbookScreen extends Screen {
             return true;
         }
 
+        // 3. Хоткей Линейки (R / Shift+R)
+        if (keyCode == GLFW.GLFW_KEY_R && hasRuler) {
+            if (Screen.hasShiftDown()) {
+                if (!this.isQuickRulerMode) {
+                    this.isRulerActive = true;
+                    this.isQuickRulerMode = true;
+                    this.quickRulerStartX = this.lastMouseX;
+                    this.quickRulerStartY = this.lastMouseY;
+                }
+            } else {
+                this.isRulerActive = !this.isRulerActive;
+            }
+            return true;
+        }
+
+        // 4. Хоткей Циркуля (D / Shift+D)
+        if (keyCode == GLFW.GLFW_KEY_D && hasCompass) {
+            if (Screen.hasShiftDown()) {
+                if (!this.isQuickCompassMode) {
+                    this.isQuickCompassMode = true;
+                    this.compassState = CompassState.ANCHORED;
+                    double[] logicalMouse = getLogicalMouse(this.lastMouseX, this.lastMouseY);
+                    this.compassAnchorX = logicalMouse[0];
+                    this.compassAnchorY = logicalMouse[1];
+                }
+            } else {
+                if (this.compassState == CompassState.INACTIVE) {
+                    this.compassState = CompassState.FOLDED;
+                } else {
+                    this.compassState = CompassState.INACTIVE;
+                }
+            }
+            return true;
+        }
+
+        // 5. Хоткей Лупы (Z / Shift+Z)
+        if (keyCode == GLFW.GLFW_KEY_Z && hasMagGlass) {
+            this.isMagnifyingMode = true;
+            if (Screen.hasShiftDown()) {
+                this.isMagnifierLocked = !this.isMagnifierLocked;
+            }
+            return true;
+        }
+
         return super.keyPressed(keyCode, scanCode, modifiers);
     }
-
 
     @Override
     public boolean keyReleased(int keyCode, int scanCode, int modifiers) {
@@ -1623,17 +1692,21 @@ public class SketchbookScreen extends Screen {
             this.isQuickRulerMode = false;
             return true;
         }
+
         if (keyCode == GLFW.GLFW_KEY_D && this.isQuickCompassMode) {
             this.isQuickCompassMode = false;
             this.compassState = CompassState.INACTIVE;
             return true;
         }
+
         if (keyCode == GLFW.GLFW_KEY_Z) {
             this.isMagnifyingMode = false;
             return true;
         }
+
         return super.keyReleased(keyCode, scanCode, modifiers);
     }
+
 
     public static class TextBoxState {
         public int x1, y1;
@@ -1819,6 +1892,7 @@ public class SketchbookScreen extends Screen {
 
         return (alpha << 24) | (rgb & 0xFFFFFF);
     }
+
 
     @Override
     public boolean charTyped(char codePoint, int modifiers) {

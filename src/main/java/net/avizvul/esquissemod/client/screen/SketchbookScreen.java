@@ -37,7 +37,7 @@ public class SketchbookScreen extends Screen {
     private static final ResourceLocation COLOR_MARKER_TEX = ResourceLocation.fromNamespaceAndPath(EsquisseMod.MOD_ID, "textures/gui/button_color_marker_base.png");
     private static final ResourceLocation COLOR_MARKER_TINT_TEX = ResourceLocation.fromNamespaceAndPath(EsquisseMod.MOD_ID, "textures/gui/button_color_marker_tint.png");
 
-    private enum Tool { PENCIL, COLOR_PENCIL, ERASER, SMUDGE, KNEADED_ERASER, COLOR_MARKER }
+    private enum Tool { PENCIL, COLOR_PENCIL, ERASER, SMUDGE, KNEADED_ERASER, COLOR_MARKER, TEXT }
 
     private Tool activeTool = Tool.PENCIL;
     private final int fileWidth = 74;
@@ -119,6 +119,9 @@ public class SketchbookScreen extends Screen {
     private net.minecraft.client.renderer.texture.DynamicTexture activeCanvasTexture;
     private net.minecraft.resources.ResourceLocation activeCanvasId;
     private boolean isCanvasDirty = true;
+
+    private TextBoxState activeTextBox = null;
+    private boolean isTextModeActive = false;
 
     private net.minecraft.world.item.ItemStack getColorMarkerStack() {
         return findItemStack(ModItems.COLOR_MARKER.get());
@@ -390,7 +393,100 @@ public class SketchbookScreen extends Screen {
     @Override
     public void renderBackground(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {}
 
+    private void drawToolbarButton(GuiGraphics guiGraphics, String label, int x, int y, boolean isActive) {
+        int bg = isActive ? 0xFF555555 : 0xFF333333;
+        guiGraphics.fill(x, y, x + 12, y + 16, bg);
+        guiGraphics.drawString(this.font, label, x + 3, y + 4, isActive ? 0xFFFFFF00 : 0xFFFFFFFF, false);
+    }
+
     private void renderContent(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
+
+        // --- ОТРИСОВКА АКТИВНОЙ ЗОНЫ ТЕКСТА И ПАНЕЛИ ---
+        if (this.isTextModeActive && this.activeTextBox != null) {
+            TextBoxState box = this.activeTextBox;
+
+            int canvasLeft = canvasScreenLeft;
+            int canvasTop = renderY;
+            double pCell = (double) this.scale / this.resolutionMultiplier; // Размер пикселя на экране
+
+            // Переводим логические координаты холста (0..125, 0..191) в экранные координаты
+            int screenX1 = canvasLeft + (int) (box.x1 * pCell);
+            int screenY1 = canvasTop + (int) (box.y1 * pCell);
+            int screenX2 = canvasLeft + (int) (box.x2 * pCell);
+            int screenY2 = canvasTop + (int) (box.y2 * pCell);
+
+            // 1. Рисуем пунктирную рамку вокруг зоны
+            int dashLen = 4;
+            int dashGap = 2;
+            int outlineColor = 0xFF007ACC; // Синий цвет выделения Photoshop
+
+            // Верхняя и нижняя линии
+            for (int px = screenX1; px < screenX2; px += dashLen + dashGap) {
+                guiGraphics.fill(px, screenY1, Math.min(px + dashLen, screenX2), screenY1 + 1, outlineColor);
+                guiGraphics.fill(px, screenY2, Math.min(px + dashLen, screenX2), screenY2 + 1, outlineColor);
+            }
+            // Левая и правая линии
+            for (int py = screenY1; py < screenY2; py += dashLen + dashGap) {
+                guiGraphics.fill(screenX1, py, screenX1 + 1, Math.min(py + dashLen, screenY2), outlineColor);
+                guiGraphics.fill(screenX2, py, screenX2 + 1, Math.min(py + dashLen, screenY2), outlineColor);
+            }
+
+            // 2. Маркеры управления (Квадратики)
+            int handleSize = 6;
+            // Верхний левый маркер (Перемещение)
+            guiGraphics.fill(screenX1 - handleSize / 2, screenY1 - handleSize / 2,
+                    screenX1 + handleSize / 2, screenY1 + handleSize / 2, 0xFFFFFFFF);
+            guiGraphics.fill(screenX1 - handleSize / 2 + 1, screenY1 - handleSize / 2 + 1,
+                    screenX1 + handleSize / 2 - 1, screenY1 + handleSize / 2 - 1, outlineColor);
+
+            // Нижний правый маркер (Изменение размера)
+            guiGraphics.fill(screenX2 - handleSize / 2, screenY2 - handleSize / 2,
+                    screenX2 + handleSize / 2, screenY2 + handleSize / 2, 0xFFFFFFFF);
+            guiGraphics.fill(screenX2 - handleSize / 2 + 1, screenY2 - handleSize / 2 + 1,
+                    screenX2 + handleSize / 2 - 1, screenY2 + handleSize / 2 - 1, outlineColor);
+
+            // 3. Предпросмотр текста внутри рамки
+            String textToShow = box.text.toString() + ((System.currentTimeMillis() / 500 % 2 == 0) ? "|" : "");
+            StringBuilder fmtText = new StringBuilder();
+            if (box.isBold) fmtText.append("§l");
+            if (box.isItalic) fmtText.append("§o");
+            if (box.isUnderline) fmtText.append("§n");
+            if (box.isStrikethrough) fmtText.append("§m");
+            fmtText.append(textToShow);
+
+            guiGraphics.pose().pushPose();
+            guiGraphics.pose().translate(screenX1 + 2, screenY1 + 2, 0);
+            guiGraphics.pose().scale(box.fontScale, box.fontScale, 1.0f);
+
+            int maxW = (int) ((screenX2 - screenX1 - 4) / box.fontScale);
+            guiGraphics.drawWordWrap(this.font, Component.literal(fmtText.toString()), 0, 0, maxW, box.colorArgb);
+            guiGraphics.pose().popPose();
+
+            // 4. Плавающая панель форматирования под текстовой зоной
+            int toolbarX = screenX1;
+            int toolbarY = screenY2 + 6;
+            int toolbarWidth = 140;
+            int toolbarHeight = 20;
+
+            // Фон панели
+            guiGraphics.fill(toolbarX, toolbarY, toolbarX + toolbarWidth, toolbarY + toolbarHeight, 0xF0222222);
+            guiGraphics.fill(toolbarX - 1, toolbarY - 1, toolbarX + toolbarWidth + 1, toolbarY + toolbarHeight + 1, 0xFF444444);
+
+            // Кнопки панели: [B] [I] [U] [S]  [A-] [A+]  [✓] [✗]
+            drawToolbarButton(guiGraphics, "B", toolbarX + 4, toolbarY + 2, box.isBold);
+            drawToolbarButton(guiGraphics, "I", toolbarX + 18, toolbarY + 2, box.isItalic);
+            drawToolbarButton(guiGraphics, "U", toolbarX + 32, toolbarY + 2, box.isUnderline);
+            drawToolbarButton(guiGraphics, "S", toolbarX + 46, toolbarY + 2, box.isStrikethrough);
+
+            drawToolbarButton(guiGraphics, "A-", toolbarX + 66, toolbarY + 2, false);
+            drawToolbarButton(guiGraphics, "A+", toolbarX + 82, toolbarY + 2, false);
+
+            // Подтверждение / Отмена
+            guiGraphics.drawString(this.font, "§a✓", toolbarX + 106, toolbarY + 6, 0xFF00FF00, false);
+            guiGraphics.drawString(this.font, "§c✗", toolbarX + 122, toolbarY + 6, 0xFFFF0000, false);
+        }
+
+
         this.lastMouseX = mouseX;
         this.lastMouseY = mouseY;
 
@@ -1559,6 +1655,30 @@ public class SketchbookScreen extends Screen {
             return true;
         }
 
+        if (this.isTextModeActive && this.activeTextBox != null) {
+            // Ctrl + Enter -> Подтверждение (✓)
+            if ((keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) && Screen.hasControlDown()) {
+                commitTextToCanvas();
+                return true;
+            }
+            // Enter -> Перенос строки
+            else if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
+                this.activeTextBox.text.append("\n");
+                return true;
+            }
+            // Backspace -> Удаление символа
+            else if (keyCode == GLFW.GLFW_KEY_BACKSPACE && this.activeTextBox.text.length() > 0) {
+                this.activeTextBox.text.deleteCharAt(this.activeTextBox.text.length() - 1);
+                return true;
+            }
+            // Escape -> Отмена (✗)
+            else if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+                this.isTextModeActive = false;
+                this.activeTextBox = null;
+                return true;
+            }
+        }
+
         return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
@@ -1578,6 +1698,77 @@ public class SketchbookScreen extends Screen {
             return true;
         }
         return super.keyReleased(keyCode, scanCode, modifiers);
+    }
+
+    public static class TextBoxState {
+        public int x1, y1; // Верхний левый угол на холсте (0..125, 0..191)
+        public int x2, y2; // Нижний правый угол на холсте
+
+        public StringBuilder text = new StringBuilder();
+        public float fontScale = 1.0f; // Коэффициент размера шрифта (управляется A- / A+)
+
+        public boolean isBold = false;
+        public boolean isItalic = false;
+        public boolean isUnderline = false;
+        public boolean isStrikethrough = false;
+        public int colorArgb = 0xFF000000; // По умолчанию чёрный
+
+        public enum DragMode { NONE, MOVING, RESIZING_BR }
+        public DragMode dragMode = DragMode.NONE;
+
+        public int dragOffsetX, dragOffsetY;
+
+        public TextBoxState(int startX, int startY) {
+            this.x1 = startX;
+            this.y1 = startY;
+            // Начальный размер зоны по умолчанию: 50x30 пикселей холста
+            this.x2 = Math.min(125, startX + 50);
+            this.y2 = Math.min(191, startY + 30);
+        }
+
+        public int getWidth() { return Math.max(10, Math.abs(x2 - x1)); }
+        public int getHeight() { return Math.max(10, Math.abs(y2 - y1)); }
+    }
+
+    @Override
+    public boolean charTyped(char codePoint, int modifiers) {
+        if (this.isTextModeActive && this.activeTextBox != null) {
+            this.activeTextBox.text.append(codePoint);
+            return true;
+        }
+        return super.charTyped(codePoint, modifiers);
+    }
+
+    private void commitTextToCanvas() {
+        if (!this.isTextModeActive || this.activeTextBox == null || this.activeTextBox.text.length() == 0) {
+            this.isTextModeActive = false;
+            this.activeTextBox = null;
+            return;
+        }
+
+        TextBoxState box = this.activeTextBox;
+
+        // Формируем текст
+        StringBuilder fmtText = new StringBuilder();
+        if (box.isBold) fmtText.append("§l");
+        if (box.isItalic) fmtText.append("§o");
+        if (box.isUnderline) fmtText.append("§n");
+        if (box.isStrikethrough) fmtText.append("§m");
+        fmtText.append(box.text);
+
+        Component comp = Component.literal(fmtText.toString());
+        int maxW = (int) (box.getWidth() / box.fontScale);
+        List<FormattedCharSequence> lines = this.font.split(comp, maxW);
+
+        // Наносим текст пиксель за пикселем на массив pixels[x][y]
+        int startX = box.x1;
+        int startY = box.y1;
+        int fontHeight = this.font.lineHeight;
+
+        // Включаем флаг обновления текстуры страницы
+        this.isCanvasDirty = true;
+        this.isTextModeActive = false;
+        this.activeTextBox = null;
     }
 
     @Override

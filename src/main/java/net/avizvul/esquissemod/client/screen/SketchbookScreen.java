@@ -758,6 +758,26 @@ public class SketchbookScreen extends Screen {
             int handleSize = 6;
             guiGraphics.fill(screenX2 - handleSize / 2, screenY2 - handleSize / 2, screenX2 + handleSize / 2, screenY2 + handleSize / 2, 0xFFFFFFFF);
 
+            if (box.hasSelection()) {
+                int minPos = box.getSelectionMin();
+                int maxPos = box.getSelectionMax();
+
+                String fullText = box.text.toString();
+                String beforeSelection = fullText.substring(0, minPos);
+                String selectedSegment = fullText.substring(minPos, maxPos);
+
+                int startOffsetX = (int) (this.font.width(beforeSelection) * box.fontScale);
+                int selectionWidth = (int) (this.font.width(selectedSegment) * box.fontScale);
+
+                int highlightX1 = screenX1 + 2 + startOffsetX;
+                int highlightY1 = screenY1 + 2;
+                int highlightX2 = highlightX1 + selectionWidth;
+                int highlightY2 = highlightY1 + (int) (9 * box.fontScale);
+
+                // Полупрозрачный синий прямоугольник под текстом (0x802266FF)
+                guiGraphics.fill(highlightX1, highlightY1, highlightX2, highlightY2, 0x802266FF);
+            }
+
             // Текст с мигающей кареткой ввода
             StringBuilder previewBuf = new StringBuilder(box.text);
             if (System.currentTimeMillis() / 500 % 2 == 0) {
@@ -1679,44 +1699,48 @@ public class SketchbookScreen extends Screen {
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+
         // 1. Полная блокировка хоткеев во время активного ввода текста в текстовое поле
         if (this.isTextModeActive && this.activeTextBox != null) {
             TextBoxState box = this.activeTextBox;
             boolean hasShift = Screen.hasShiftDown();
+            boolean hasCtrl = Screen.hasControlDown();
+        }
 
-            if ((keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) && Screen.hasControlDown()) {
-                commitTextToCanvas();
-                return true;
-            } else if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
-                box.insertText("\n");
-                return true;
-            } else if (keyCode == GLFW.GLFW_KEY_BACKSPACE) {
-                box.deleteBack();
-                return true;
-            } else if (keyCode == GLFW.GLFW_KEY_DELETE) {
-                box.deleteForward();
-                return true;
-            } else if (keyCode == GLFW.GLFW_KEY_LEFT) {
-                box.moveCursorLeft(hasShift);
-                return true;
-            } else if (keyCode == GLFW.GLFW_KEY_RIGHT) {
-                box.moveCursorRight(hasShift);
-                return true;
-            } else if (keyCode == GLFW.GLFW_KEY_HOME) {
-                box.moveCursorHome(hasShift);
-                return true;
-            } else if (keyCode == GLFW.GLFW_KEY_END) {
-                box.moveCursorEnd(hasShift);
-                return true;
-            } else if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
-                this.isTextModeActive = false;
-                this.activeTextBox = null;
-                return true;
-            }
+        //Модель работы с текстом
+
+        if ((keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) && hasCtrl) {
+            commitTextToCanvas();
+            return true;
+        } else if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
+            box.insertText("\n");
+            return true;
+        } else if (keyCode == GLFW.GLFW_KEY_BACKSPACE) {
+            box.deleteBack();
+            return true;
+        } else if (keyCode == GLFW.GLFW_KEY_DELETE) {
+            box.deleteForward();
+            return true;
+        } else if (keyCode == GLFW.GLFW_KEY_LEFT) {
+            box.moveCursorLeft(hasShift, hasCtrl);
+            return true;
+        } else if (keyCode == GLFW.GLFW_KEY_RIGHT) {
+            box.moveCursorRight(hasShift, hasCtrl);
+            return true;
+        } else if (keyCode == GLFW.GLFW_KEY_HOME) {
+            box.moveCursorHome(hasShift, hasCtrl);
+            return true;
+        } else if (keyCode == GLFW.GLFW_KEY_END) {
+            box.moveCursorEnd(hasShift, hasCtrl);
+            return true;
+        } else if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+            this.isTextModeActive = false;
+            this.activeTextBox = null;
             return true;
         }
 
-        // 2. Переключение основных инструментов рисования
+
+    // 2. Переключение основных инструментов рисования
         boolean hasPencil = hasTool(ModItems.PENCIL.get());
         boolean hasEraser = hasTool(ModItems.ERASER.get());
         boolean hasSmudge = hasTool(ModItems.SMUDGE.get());
@@ -1817,8 +1841,11 @@ public class SketchbookScreen extends Screen {
         public int x1, y1;
         public int x2, y2;
         public StringBuilder text = new StringBuilder();
-        public int cursorPos = 0;
-        public int selectionAnchor = -1; // -1 = нет выделения
+
+        // Двухиндексная схема выделения и каретки
+        public int anchor = 0; // Точка зафиксированного якоря
+        public int caret = 0;  // Текущее положение каретки
+        public int cursorPos = 0; // Поле для обратной совместимости
         public float fontScale = 1.0f;
 
         public TextBoxState(int startX, int startY) {
@@ -1826,23 +1853,33 @@ public class SketchbookScreen extends Screen {
             this.y1 = startY;
             this.x2 = 125;
             this.y2 = Math.min(191, startY + 40);
+            this.anchor = 0;
+            this.caret = 0;
             this.cursorPos = 0;
-            this.selectionAnchor = -1;
         }
 
         public int getWidth() { return Math.max(10, Math.abs(x2 - x1)); }
         public int getHeight() { return Math.max(10, Math.abs(y2 - y1)); }
 
+        // --- ЛОГИКА ВЫДЕЛЕНИЯ ---
         public boolean hasSelection() {
-            return selectionAnchor >= 0 && selectionAnchor != cursorPos;
+            return anchor != caret;
         }
 
         public int getSelectionMin() {
-            return hasSelection() ? Math.min(selectionAnchor, cursorPos) : cursorPos;
+            return Math.min(anchor, caret);
         }
 
         public int getSelectionMax() {
-            return hasSelection() ? Math.max(selectionAnchor, cursorPos) : cursorPos;
+            return Math.max(anchor, caret);
+        }
+
+        public void setCaret(int pos, boolean select) {
+            this.caret = Math.max(0, Math.min(text.length(), pos));
+            if (!select) {
+                this.anchor = this.caret;
+            }
+            this.cursorPos = this.caret;
         }
 
         public void deleteSelection() {
@@ -1850,70 +1887,129 @@ public class SketchbookScreen extends Screen {
                 int min = getSelectionMin();
                 int max = getSelectionMax();
                 text.delete(min, max);
-                cursorPos = min;
-                selectionAnchor = -1;
+                setCaret(min, false);
             }
         }
 
+        // --- ВВОД И УДАЛЕНИЕ СИМВОЛОВ ---
         public void insertText(String str) {
             deleteSelection();
-            text.insert(cursorPos, str);
-            cursorPos += str.length();
-            selectionAnchor = -1;
+            int safeCaret = Math.max(0, Math.min(caret, text.length()));
+            text.insert(safeCaret, str);
+            setCaret(safeCaret + str.length(), false);
         }
 
         public void deleteBack() {
             if (hasSelection()) {
                 deleteSelection();
-            } else if (cursorPos > 0 && text.length() > 0) {
-                text.deleteCharAt(cursorPos - 1);
-                cursorPos--;
+            } else if (caret > 0 && text.length() > 0) {
+                text.deleteCharAt(caret - 1);
+                setCaret(caret - 1, false);
             }
         }
 
         public void deleteForward() {
             if (hasSelection()) {
                 deleteSelection();
-            } else if (cursorPos < text.length()) {
-                text.deleteCharAt(cursorPos);
+            } else if (caret < text.length()) {
+                text.deleteCharAt(caret);
+                setCaret(caret, true);
+                this.anchor = this.caret;
             }
         }
 
+        // --- НАВИГАЦИЯ КАРЕТКИ С ПОДДЕРЖКОЙ SHIFT И CTRL ---
         public void moveCursorLeft(boolean select) {
+            moveCursorLeft(select, false);
+        }
+
+        public void moveCursorLeft(boolean select, boolean ctrl) {
             if (select) {
-                if (selectionAnchor == -1) selectionAnchor = cursorPos;
+                if (ctrl) {
+                    setCaret(findPreviousWordBoundary(caret), true);
+                } else {
+                    if (caret > 0) setCaret(caret - 1, true);
+                }
             } else {
-                if (hasSelection()) cursorPos = getSelectionMin();
-                selectionAnchor = -1;
+                if (hasSelection()) {
+                    setCaret(getSelectionMin(), false);
+                } else {
+                    if (ctrl) {
+                        setCaret(findPreviousWordBoundary(caret), false);
+                    } else {
+                        if (caret > 0) setCaret(caret - 1, false);
+                    }
+                }
             }
-            if (cursorPos > 0) cursorPos--;
         }
 
         public void moveCursorRight(boolean select) {
+            moveCursorRight(select, false);
+        }
+
+        public void moveCursorRight(boolean select, boolean ctrl) {
             if (select) {
-                if (selectionAnchor == -1) selectionAnchor = cursorPos;
+                if (ctrl) {
+                    setCaret(findNextWordBoundary(caret), true);
+                } else {
+                    if (caret < text.length()) setCaret(caret + 1, true);
+                }
             } else {
-                if (hasSelection()) cursorPos = getSelectionMax();
-                selectionAnchor = -1;
+                if (hasSelection()) {
+                    setCaret(getSelectionMax(), false);
+                } else {
+                    if (ctrl) {
+                        setCaret(findNextWordBoundary(caret), false);
+                    } else {
+                        if (caret < text.length()) setCaret(caret + 1, false);
+                    }
+                }
             }
-            if (cursorPos < text.length()) cursorPos++;
         }
 
         public void moveCursorHome(boolean select) {
-            if (select) {
-                if (selectionAnchor == -1) selectionAnchor = cursorPos;
-            } else selectionAnchor = -1;
-            cursorPos = 0;
+            moveCursorHome(select, false);
+        }
+
+        public void moveCursorHome(boolean select, boolean ctrl) {
+            setCaret(0, select);
         }
 
         public void moveCursorEnd(boolean select) {
-            if (select) {
-                if (selectionAnchor == -1) selectionAnchor = cursorPos;
-            } else selectionAnchor = -1;
-            cursorPos = text.length();
+            moveCursorEnd(select, false);
         }
 
-        // Умное форматирование по логике Word / Photoshop
+        public void moveCursorEnd(boolean select, boolean ctrl) {
+            setCaret(text.length(), select);
+        }
+
+        // --- ХЕЛПЕРЫ СКАНИРОВАНИЯ СЛОВ И ГРАНИЦ (Ctrl + Left / Right) ---
+        public int findPreviousWordBoundary(int pos) {
+            if (pos <= 0) return 0;
+            int p = pos - 1;
+            while (p > 0 && Character.isWhitespace(text.charAt(p))) {
+                p--;
+            }
+            while (p > 0 && Character.isLetterOrDigit(text.charAt(p - 1))) {
+                p--;
+            }
+            return p;
+        }
+
+        public int findNextWordBoundary(int pos) {
+            int len = text.length();
+            if (pos >= len) return len;
+            int p = pos;
+            while (p < len && Character.isLetterOrDigit(text.charAt(p))) {
+                p++;
+            }
+            while (p < len && Character.isWhitespace(text.charAt(p))) {
+                p++;
+            }
+            return p;
+        }
+
+        // --- ФОРМАТИРОВАНИЕ ТЕКСТА (B, I, U, S) ---
         public void applyFormattingCode(String code) {
             if (hasSelection()) {
                 int min = getSelectionMin();
@@ -1923,13 +2019,12 @@ public class SketchbookScreen extends Screen {
                 if (selected.startsWith(code) && selected.endsWith("§r")) {
                     String unwrapped = selected.substring(code.length(), selected.length() - 2);
                     text.replace(min, max, unwrapped);
-                    cursorPos = min + unwrapped.length();
+                    setCaret(min + unwrapped.length(), false);
                 } else {
                     String wrapped = code + selected + "§r";
                     text.replace(min, max, wrapped);
-                    cursorPos = min + wrapped.length();
+                    setCaret(min + wrapped.length(), false);
                 }
-                selectionAnchor = -1;
             } else {
                 int len = text.length();
                 if (len == 0) {
@@ -1937,10 +2032,11 @@ public class SketchbookScreen extends Screen {
                     return;
                 }
 
-                int start = Math.min(cursorPos, len - 1);
+                int start = Math.min(caret, len - 1);
                 while (start < len && Character.isWhitespace(text.charAt(start))) start++;
+
                 if (start >= len) {
-                    start = cursorPos - 1;
+                    start = caret - 1;
                     while (start >= 0 && Character.isWhitespace(text.charAt(start))) start--;
                 }
 
@@ -1960,11 +2056,11 @@ public class SketchbookScreen extends Screen {
                     if (word.startsWith(code) && word.endsWith("§r")) {
                         String unwrapped = word.substring(code.length(), word.length() - 2);
                         text.replace(wordStart, wordEnd, unwrapped);
-                        cursorPos = wordStart + unwrapped.length();
+                        setCaret(wordStart + unwrapped.length(), false);
                     } else {
                         String wrapped = code + word + "§r";
                         text.replace(wordStart, wordEnd, wrapped);
-                        cursorPos = wordStart + wrapped.length();
+                        setCaret(wordStart + wrapped.length(), false);
                     }
                 } else {
                     insertText(code);

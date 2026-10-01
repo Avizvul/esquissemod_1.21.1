@@ -5,10 +5,13 @@ import net.avizvul.esquissemod.EsquisseMod;
 import net.avizvul.esquissemod.item.ModItems;
 import net.avizvul.esquissemod.menu.PrinterMenu;
 import net.avizvul.esquissemod.network.PrinterActionPayload;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.sounds.SoundEvents;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.network.PacketDistributor;
@@ -18,7 +21,6 @@ public class PrinterScreen extends AbstractContainerScreen<PrinterMenu> {
     private static final ResourceLocation TEXTURE_GUI = ResourceLocation.fromNamespaceAndPath(EsquisseMod.MOD_ID, "textures/gui/printer_gui.png");
     private static final ResourceLocation TEXTURE_BUTTON_PRESS = ResourceLocation.fromNamespaceAndPath(EsquisseMod.MOD_ID, "textures/gui/printer_button_press.png");
     private static final ResourceLocation TEXTURE_BUTTON_HL = ResourceLocation.fromNamespaceAndPath(EsquisseMod.MOD_ID, "textures/gui/printer_button_hl.png");
-
     private static final ResourceLocation TEXTURE_CYAN = ResourceLocation.fromNamespaceAndPath(EsquisseMod.MOD_ID, "textures/gui/printer_cyan.png");
     private static final ResourceLocation TEXTURE_MAGENTA = ResourceLocation.fromNamespaceAndPath(EsquisseMod.MOD_ID, "textures/gui/printer_magenta.png");
     private static final ResourceLocation TEXTURE_YELLOW = ResourceLocation.fromNamespaceAndPath(EsquisseMod.MOD_ID, "textures/gui/printer_yellow.png");
@@ -27,13 +29,13 @@ public class PrinterScreen extends AbstractContainerScreen<PrinterMenu> {
     private static final ResourceLocation TEXTURE_ESSENCE = ResourceLocation.fromNamespaceAndPath(EsquisseMod.MOD_ID, "textures/gui/printer_essence.png");
 
     private long buttonPressTime = 0;
+    private boolean wasButtonPressed = false; // Флаг для отслеживания отжатия кнопки
 
     public PrinterScreen(PrinterMenu menu, Inventory playerInventory, Component title) {
         super(menu, playerInventory, title);
         this.imageWidth = 176;
         this.imageHeight = 192;
 
-        // Позиционирование заголовка "Принтер" и подписи "Инвентарь"
         this.titleLabelX = 8;
         this.titleLabelY = 5;
         this.inventoryLabelX = 8;
@@ -50,7 +52,7 @@ public class PrinterScreen extends AbstractContainerScreen<PrinterMenu> {
         // 1. Основной фон GUI
         guiGraphics.blit(TEXTURE_GUI, x, y, 0, 0, this.imageWidth, this.imageHeight);
 
-        // 2. Отображение красителей CMYK (Слоты 3, 4, 5, 6)
+        // 2. Отображение красителей CMYK
         if (!this.menu.getSlot(3).getItem().isEmpty()) {
             guiGraphics.blit(TEXTURE_CYAN, x, y, 0, 0, this.imageWidth, this.imageHeight);
         }
@@ -64,7 +66,7 @@ public class PrinterScreen extends AbstractContainerScreen<PrinterMenu> {
             guiGraphics.blit(TEXTURE_BLACK, x, y, 0, 0, this.imageWidth, this.imageHeight);
         }
 
-        // 3. Отображение катализатора (Слот 7: Варп-Эссенция или Глоустоун/Редстоун)
+        // 3. Отображение катализатора
         ItemStack catalystStack = this.menu.getSlot(7).getItem();
         if (!catalystStack.isEmpty()) {
             if (catalystStack.is(ModItems.WARP_ESSENCE.get())) {
@@ -74,7 +76,7 @@ public class PrinterScreen extends AbstractContainerScreen<PrinterMenu> {
             }
         }
 
-        // 4. Кнопка печати (Координаты: 113, 34 | Размер: 18x47)
+        // 4. Кнопка печати (113, 34 | 14x17)
         int btnX = x + 113;
         int btnY = y + 34;
         int btnWidth = 14;
@@ -82,6 +84,14 @@ public class PrinterScreen extends AbstractContainerScreen<PrinterMenu> {
 
         boolean isPressed = (System.currentTimeMillis() - this.buttonPressTime) < 500;
         boolean isHovered = mouseX >= btnX && mouseX < btnX + btnWidth && mouseY >= btnY && mouseY < btnY + btnHeight;
+
+        // Звук отжатия кнопки (когда 500 мс прошли и кнопка подпрыгивает назад)
+        if (this.wasButtonPressed && !isPressed) {
+            this.wasButtonPressed = false;
+            Minecraft.getInstance().getSoundManager().play(
+                    SimpleSoundInstance.forUI(SoundEvents.STONE_BUTTON_CLICK_OFF, 1.0F)
+            );
+        }
 
         if (isPressed) {
             guiGraphics.blit(TEXTURE_BUTTON_PRESS, x, y, 0, 0, this.imageWidth, this.imageHeight);
@@ -94,7 +104,6 @@ public class PrinterScreen extends AbstractContainerScreen<PrinterMenu> {
 
     @Override
     protected void renderLabels(GuiGraphics guiGraphics, int mouseX, int mouseY) {
-        // Отрисовка названия блока и инвентаря стандартным тёмно-серым цветом (0x404040)
         guiGraphics.drawString(this.font, this.playerInventoryTitle, this.inventoryLabelX, this.inventoryLabelY, 0x404040, false);
     }
 
@@ -111,6 +120,13 @@ public class PrinterScreen extends AbstractContainerScreen<PrinterMenu> {
 
             if (mouseX >= btnX && mouseX < btnX + btnWidth && mouseY >= btnY && mouseY < btnY + btnHeight) {
                 this.buttonPressTime = System.currentTimeMillis();
+                this.wasButtonPressed = true;
+
+                // Звук утапливания кнопки при клике
+                Minecraft.getInstance().getSoundManager().play(
+                        SimpleSoundInstance.forUI(SoundEvents.STONE_BUTTON_CLICK_ON, 1.0F)
+                );
+
                 PacketDistributor.sendToServer(new PrinterActionPayload(this.menu.getPos()));
                 return true;
             }

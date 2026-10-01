@@ -5,13 +5,11 @@ import net.avizvul.esquissemod.component.ModDataComponents;
 import net.avizvul.esquissemod.component.SketchData;
 import net.avizvul.esquissemod.item.ModItems;
 import net.avizvul.esquissemod.network.SketchbookSavePayload;
-import net.avizvul.esquissemod.network.TearPagePayload;
 import net.avizvul.esquissemod.util.ColorUtils;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.world.item.ItemStack;
 import org.lwjgl.glfw.GLFW;
 import java.util.ArrayList;
@@ -698,13 +696,8 @@ public class SketchbookScreen extends Screen {
                     ? ((hardness == 1) ? 0xFFAAAAAA : (hardness == 2) ? 0xFF666666 : 0xFF222222)
                     : ((hardness == 1) ? 0xFFAAAAAA : (hardness == 2) ? 0xFFCCCCCC : 0xFFFFFFFF);
 
-            int textX = activeToolX + (scaledBtnWidth / 2) - (this.font.width(hardnessText) / 2);
-            guiGraphics.drawString(this.font, hardnessText, textX, peekY - 24, textColor, false);
-        }
-
-
-        if (activeToolX > -1000) {
-            renderSizeIndicators(guiGraphics, mouseX, mouseY, activeToolX, peekY);
+            int hardnessTextX = activeToolX + (scaledBtnWidth / 2) - (this.font.width(hardnessText) / 2);
+            guiGraphics.drawString(this.font, hardnessText, hardnessTextX, peekY - 24, textColor, false);
         }
 
         // --- 3. ЦВЕТОВАЯ ПАЛИТРА ---
@@ -1334,7 +1327,6 @@ public class SketchbookScreen extends Screen {
 
             if (activeX > -1000) {
                 if (handleSizeIndicatorClick(mouseX, mouseY, activeX, peekY)) return true;
-                if (handleHardnessIndicatorClick(mouseX, mouseY, activeX, peekY - 10)) return true;
             }
 
             // Перетаскивание холста / Рисование
@@ -1807,7 +1799,7 @@ public class SketchbookScreen extends Screen {
 
         if (textPixels != null && textPixels.length > 0) {
             int w = textPixels.length;          // Ширина прямоугольного массива (например, 125)
-            int h = textPixels.length;       // ИСПРАВЛЕНИЕ: Реальная высота массива (например, 40)
+            int h = textPixels[0].length;       // ИСПРАВЛЕНИЕ: Реальная высота массива (например, 40)
 
             for (int x = 0; x < w; x++) {
                 for (int y = 0; y < h; y++) {

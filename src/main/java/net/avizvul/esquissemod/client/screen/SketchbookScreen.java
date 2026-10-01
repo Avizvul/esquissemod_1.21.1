@@ -10,11 +10,9 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.item.Item;
+import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.world.item.ItemStack;
-import net.neoforged.neoforge.network.PacketDistributor;
 import org.lwjgl.glfw.GLFW;
-import com.mojang.math.Axis;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -350,6 +348,7 @@ public class SketchbookScreen extends Screen {
             case KNEADED_ERASER -> findItemStack(ModItems.KNEADED_ERASER.get());
             case SMUDGE -> findItemStack(ModItems.SMUDGE.get());
             case COLOR_MARKER -> findItemStack(ModItems.COLOR_MARKER.get());
+            default -> net.minecraft.world.item.ItemStack.EMPTY; // Для Tool.TEXT и других инструментах без стака
         };
     }
 
@@ -400,6 +399,22 @@ public class SketchbookScreen extends Screen {
     }
 
     private void renderContent(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
+        this.lastMouseX = mouseX;
+        this.lastMouseY = mouseY;
+
+        if (this.isQuickRulerMode) {
+            this.rulerX = (this.quickRulerStartX + mouseX) / 2.0;
+            this.rulerY = (this.quickRulerStartY + mouseY) / 2.0;
+            this.rulerAngle = (float) Math.toDegrees(Math.atan2(mouseY - this.quickRulerStartY, mouseX - this.quickRulerStartX));
+        }
+
+        // 1. Предварительное вычисление базовых координат GUI и холста
+        int renderX = (int) this.exactGuiLeft;
+        int renderY = (int) this.exactGuiTop;
+        int drawWidth = this.fileWidth * this.scale;
+        int drawHeight = this.fileHeight * this.scale;
+        int canvasScreenLeft = renderX + ((this.frameWidth + this.deadZoneWidth) * this.scale);
+        int canvasScreenTop = renderY;
 
         // --- ОТРИСОВКА АКТИВНОЙ ЗОНЫ ТЕКСТА И ПАНЕЛИ ---
         if (this.isTextModeActive && this.activeTextBox != null) {
@@ -415,7 +430,7 @@ public class SketchbookScreen extends Screen {
             int screenX2 = canvasLeft + (int) (box.x2 * pCell);
             int screenY2 = canvasTop + (int) (box.y2 * pCell);
 
-            // 1. Рисуем пунктирную рамку вокруг зоны
+            // 1. Пунктирная рамка вокруг зоны
             int dashLen = 4;
             int dashGap = 2;
             int outlineColor = 0xFF007ACC; // Синий цвет выделения Photoshop
@@ -425,6 +440,7 @@ public class SketchbookScreen extends Screen {
                 guiGraphics.fill(px, screenY1, Math.min(px + dashLen, screenX2), screenY1 + 1, outlineColor);
                 guiGraphics.fill(px, screenY2, Math.min(px + dashLen, screenX2), screenY2 + 1, outlineColor);
             }
+
             // Левая и правая линии
             for (int py = screenY1; py < screenY2; py += dashLen + dashGap) {
                 guiGraphics.fill(screenX1, py, screenX1 + 1, Math.min(py + dashLen, screenY2), outlineColor);
@@ -433,6 +449,7 @@ public class SketchbookScreen extends Screen {
 
             // 2. Маркеры управления (Квадратики)
             int handleSize = 6;
+
             // Верхний левый маркер (Перемещение)
             guiGraphics.fill(screenX1 - handleSize / 2, screenY1 - handleSize / 2,
                     screenX1 + handleSize / 2, screenY1 + handleSize / 2, 0xFFFFFFFF);
@@ -447,6 +464,7 @@ public class SketchbookScreen extends Screen {
 
             // 3. Предпросмотр текста внутри рамки
             String textToShow = box.text.toString() + ((System.currentTimeMillis() / 500 % 2 == 0) ? "|" : "");
+
             StringBuilder fmtText = new StringBuilder();
             if (box.isBold) fmtText.append("§l");
             if (box.isItalic) fmtText.append("§o");
@@ -486,21 +504,7 @@ public class SketchbookScreen extends Screen {
             guiGraphics.drawString(this.font, "§c✗", toolbarX + 122, toolbarY + 6, 0xFFFF0000, false);
         }
 
-
-        this.lastMouseX = mouseX;
-        this.lastMouseY = mouseY;
-
-        if (this.isQuickRulerMode) {
-            this.rulerX = (this.quickRulerStartX + mouseX) / 2.0;
-            this.rulerY = (this.quickRulerStartY + mouseY) / 2.0;
-            this.rulerAngle = (float) Math.toDegrees(Math.atan2(mouseY - this.quickRulerStartY, mouseX - this.quickRulerStartX));
-        }
-
-        int renderX = (int) this.exactGuiLeft;
-        int renderY = (int) this.exactGuiTop;
-        int drawWidth = this.fileWidth * this.scale;
-        int drawHeight = this.fileHeight * this.scale;
-
+        // 2. Проверка доступных инструментов
         boolean hasPencil = hasTool(ModItems.PENCIL.get());
         boolean hasEraser = hasTool(ModItems.ERASER.get());
         boolean hasSmudge = hasTool(ModItems.SMUDGE.get());
@@ -518,13 +522,16 @@ public class SketchbookScreen extends Screen {
 
         guiGraphics.pose().pushPose();
         guiGraphics.pose().translate(cx, cy, 0);
+
         if (this.rotationAngle != 0.0f) {
             guiGraphics.pose().mulPose(com.mojang.math.Axis.ZP.rotationDegrees(this.rotationAngle));
         }
+
         guiGraphics.pose().translate(-cx, -cy, 0);
 
         int scaledTabWidth = this.tabWidth * this.tabScale;
         int scaledTabHeight = this.tabHeight * this.tabScale;
+
         TabCoords coords = getTabCoords(renderX, renderY, drawWidth);
 
         int tabX = coords.tabX();
@@ -532,8 +539,9 @@ public class SketchbookScreen extends Screen {
         int forwardTabY = coords.forwardTabY();
 
         double[] logicalMouse = getLogicalMouse(mouseX, mouseY);
-        double lMouseX = logicalMouse[ 0 ];
-        double lMouseY = logicalMouse[ 1 ];
+
+        double lMouseX = logicalMouse[0];
+        double lMouseY = logicalMouse[1];
 
         if (this.currentPageIndex > 0) {
             boolean backHovered = !this.isDragging && !this.isRotating && lMouseX >= tabX && lMouseX < tabX + scaledTabWidth && lMouseY >= backTabY && lMouseY < backTabY + scaledTabHeight;
@@ -575,9 +583,6 @@ public class SketchbookScreen extends Screen {
 
         guiGraphics.blit(ROTATE_BTN_TEX, btnX, btnY, btnFileWidth * this.scale, btnFileHeight * this.scale, 0.0f, 0.0f, btnFileWidth, btnFileHeight, btnFileWidth, btnFileHeight);
 
-        int canvasScreenLeft = renderX + ((this.frameWidth + this.deadZoneWidth) * this.scale);
-        int canvasScreenTop = renderY;
-
         if (this.isCanvasDirty) updateActiveCanvasTexture();
 
         if (this.activeCanvasId != null) {
@@ -598,7 +603,6 @@ public class SketchbookScreen extends Screen {
         int scaledImageHeight = this.fileHeight * this.scale;
 
         if (!this.isDragging && !this.isRotating && lMouseX >= canvasScreenLeft && lMouseX < (canvasScreenLeft + scaledCanvasWidth) && lMouseY >= renderY && lMouseY < (renderY + scaledImageHeight)) {
-
             boolean canDraw = (this.activeTool == Tool.PENCIL && hasPencil) ||
                     (this.activeTool == Tool.COLOR_PENCIL && hasPencilColors) ||
                     (this.activeTool == Tool.COLOR_MARKER && hasMarkerColors) ||
@@ -609,10 +613,10 @@ public class SketchbookScreen extends Screen {
             if (canDraw) {
                 double physicalCellSize = (double) this.scale / this.resolutionMultiplier;
                 double[] magnetMouse = applyRulerMagnet(mouseX, mouseY);
-                double[] lMouseMagnet = getLogicalMouse(magnetMouse[ 0 ], magnetMouse[ 1 ]);
+                double[] lMouseMagnet = getLogicalMouse(magnetMouse[0], magnetMouse[1]);
 
-                int centerX = (int) ((lMouseMagnet[ 0 ] - canvasScreenLeft) / physicalCellSize);
-                int centerY = (int) ((lMouseMagnet[ 1 ] - renderY) / physicalCellSize);
+                int centerX = (int) ((lMouseMagnet[0] - canvasScreenLeft) / physicalCellSize);
+                int centerY = (int) ((lMouseMagnet[1] - renderY) / physicalCellSize);
 
                 int currentBrushSize = getBrushSize();
                 int actualSize = currentBrushSize;
@@ -628,6 +632,7 @@ public class SketchbookScreen extends Screen {
                 double exactCY = centerY + (actualSize % 2 == 0 ? -0.5 : 0.0);
 
                 boolean isMarker = (this.activeTool == Tool.COLOR_MARKER);
+
                 if (isMarker) {
                     exactCX = centerX + 0.5;
                     exactCY = centerY + 0.5;
@@ -695,14 +700,17 @@ public class SketchbookScreen extends Screen {
             if (this.compassState != CompassState.FOLDED) {
                 screenAnchorX = this.compassAnchorX;
                 screenAnchorY = this.compassAnchorY;
+
                 if (this.compassState == CompassState.ANCHORED) {
                     double dx = lMouseX - this.compassAnchorX;
                     double dy = lMouseY - this.compassAnchorY;
-                    double dist = Math.sqrt(dx*dx + dy*dy);
+                    double dist = Math.sqrt(dx * dx + dy * dy);
+
                     if (dist > 192.0) {
                         dx = (dx / dist) * 192.0;
                         dy = (dy / dist) * 192.0;
                     }
+
                     screenPencilX = this.compassAnchorX + dx;
                     screenPencilY = this.compassAnchorY + dy;
                 } else if (this.compassState == CompassState.LOCKED) {
@@ -711,8 +719,10 @@ public class SketchbookScreen extends Screen {
                     screenPencilY = this.compassAnchorY + this.compassRadius * Math.sin(angle);
                 }
             }
+
             net.avizvul.esquissemod.client.render.CompassGeometryCalculator.renderCompass(guiGraphics, screenAnchorX, screenAnchorY, screenPencilX, screenPencilY);
         }
+
         guiGraphics.pose().popPose();
 
         ToolButtonCoords toolCoords = getToolButtonCoords();
@@ -728,20 +738,24 @@ public class SketchbookScreen extends Screen {
         if (hasSmudge) renderToolButton(guiGraphics, mouseX, mouseY, this.activeTool == Tool.SMUDGE, SMUDGE_TEX, toolCoords.smudgeX());
 
         boolean hasRuler = hasTool(net.avizvul.esquissemod.item.ModItems.RULER.get());
+
         if (!hasRuler && this.isRulerActive) {
             this.isRulerActive = false;
             this.isQuickRulerMode = false;
         }
+
         if (hasRuler && !this.isRulerActive) {
             renderToolButton(guiGraphics, mouseX, mouseY, false, RULER_BTN_TEX, toolCoords.rulerX());
         }
 
         boolean hasMagGlass = hasTool(ModItems.MAGNIFYING_GLASS.get());
+
         if (hasMagGlass && !this.isMagnifierLocked) {
             renderToolButton(guiGraphics, mouseX, mouseY, false, MAGGLASS_BTN_TEX, toolCoords.magGlassX());
         }
 
         boolean hasCompass = hasTool(ModItems.DRAWING_COMPASS.get());
+
         if (hasCompass && this.compassState == CompassState.INACTIVE) {
             renderToolButton(guiGraphics, mouseX, mouseY, false, COMPASS_BTN_TEX, toolCoords.compassX());
         }
@@ -760,6 +774,7 @@ public class SketchbookScreen extends Screen {
                 int emptyX = activeX + (scaledBtnWidth / 2) - (this.font.width(emptyText) / 2);
                 guiGraphics.drawString(this.font, emptyText, emptyX, peekY - 24, 0xFFFF0000, false);
             }
+
             renderPalette(guiGraphics, activeStack);
         } else if (this.activeTool == Tool.ERASER && hasEraser) {
             renderSizeIndicators(guiGraphics, mouseX, mouseY, toolCoords.eraserX(), peekY);
@@ -783,6 +798,7 @@ public class SketchbookScreen extends Screen {
             }
 
             int hardnessColor = (currentToolHardness == 1) ? 0xFFAAAAAA : (currentToolHardness == 2) ? 0xFF555555 : 0xFF222222;
+
             int activeX = (this.activeTool == Tool.PENCIL) ? toolCoords.pencilX() :
                     (this.activeTool == Tool.SMUDGE) ? toolCoords.smudgeX() :
                     (this.activeTool == Tool.KNEADED_ERASER) ? toolCoords.kneadedX() :
@@ -796,12 +812,15 @@ public class SketchbookScreen extends Screen {
             guiGraphics.pose().pushPose();
             guiGraphics.pose().translate(this.rulerX, this.rulerY, 0.5f);
             guiGraphics.pose().mulPose(com.mojang.math.Axis.ZP.rotationDegrees(this.rulerAngle));
+
             com.mojang.blaze3d.systems.RenderSystem.enableBlend();
             guiGraphics.blit(RULER_TEX, -this.rulerWidth / 2, 0, 0.0f, 0.0f, this.rulerWidth, this.rulerHeight, this.rulerWidth, this.rulerHeight);
             com.mojang.blaze3d.systems.RenderSystem.disableBlend();
+
             guiGraphics.pose().popPose();
         }
     }
+
 
     @Override
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {

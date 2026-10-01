@@ -71,14 +71,18 @@ public class TextRasterizer {
         RenderSystem.viewport(0, 0, mc.getWindow().getWidth(), mc.getWindow().getHeight());
         target.destroyBuffers();
 
-        // 4. Заполнение массива ARGB пикселей
+        // 4. Заполнение массива ARGB пикселей с разворотом по X и Y
         int dimW = targetW;
         int dimH = targetH;
         int[][] textPixels = new int[dimW][dimH];
 
         for (int x = 0; x < dimW; x++) {
             for (int y = 0; y < dimH; y++) {
-                int abgr = image.getPixelRGBA(x, y);
+                // Разворачиваем координаты обратно в нормальное положение
+                int srcX = x;
+                int srcY = dimH - 1 - y;
+
+                int abgr = image.getPixelRGBA(srcX, srcY);
                 int a = (abgr >> 24) & 0xFF;
                 int b = (abgr >> 16) & 0xFF;
                 int g = (abgr >> 8) & 0xFF;

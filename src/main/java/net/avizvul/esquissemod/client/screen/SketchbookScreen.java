@@ -1528,48 +1528,20 @@ public class SketchbookScreen extends Screen {
             int toolbarY = screenY2 + 6;
             int colorBarY = toolbarY + 20;
 
-            // 1. Клики по верхней панели
+            // А) Клики по верхней панели форматирования
             if (mouseY >= toolbarY && mouseY <= toolbarY + 20) {
-                if (mouseX >= toolbarX + 4 && mouseX <= toolbarX + 16) {
-                    this.activeTextBox.applyFormattingCode("§l");
-                    return true;
-                }
-                if (mouseX >= toolbarX + 18 && mouseX <= toolbarX + 30) {
-                    this.activeTextBox.applyFormattingCode("§o");
-                    return true;
-                }
-                if (mouseX >= toolbarX + 32 && mouseX <= toolbarX + 44) {
-                    this.activeTextBox.applyFormattingCode("§n");
-                    return true;
-                }
-                if (mouseX >= toolbarX + 46 && mouseX <= toolbarX + 58) {
-                    this.activeTextBox.applyFormattingCode("§m");
-                    return true;
-                }
-                if (mouseX >= toolbarX + 62 && mouseX <= toolbarX + 74) {
-                    this.activeTextBox.fontScale = Math.max(0.5f, this.activeTextBox.fontScale - 0.25f);
-                    return true;
-                }
-                if (mouseX >= toolbarX + 76 && mouseX <= toolbarX + 88) {
-                    this.activeTextBox.fontScale = Math.min(2.0f, this.activeTextBox.fontScale + 0.25f);
-                    return true;
-                }
-                if (mouseX >= toolbarX + 90 && mouseX <= toolbarX + 102) {
-                    this.activeTextBox.cycleOpacity();
-                    return true;
-                }
-                if (mouseX >= toolbarX + 106 && mouseX <= toolbarX + 118) {
-                    commitTextToCanvas();
-                    return true;
-                }
-                if (mouseX >= toolbarX + 120 && mouseX <= toolbarX + 132) {
-                    this.isTextModeActive = false;
-                    this.activeTextBox = null;
-                    return true;
-                }
+                if (mouseX >= toolbarX + 4 && mouseX <= toolbarX + 16) { this.activeTextBox.applyFormattingCode("§l"); return true; }
+                if (mouseX >= toolbarX + 18 && mouseX <= toolbarX + 30) { this.activeTextBox.applyFormattingCode("§o"); return true; }
+                if (mouseX >= toolbarX + 32 && mouseX <= toolbarX + 44) { this.activeTextBox.applyFormattingCode("§n"); return true; }
+                if (mouseX >= toolbarX + 46 && mouseX <= toolbarX + 58) { this.activeTextBox.applyFormattingCode("§m"); return true; }
+                if (mouseX >= toolbarX + 62 && mouseX <= toolbarX + 74) { this.activeTextBox.fontScale = Math.max(0.5f, this.activeTextBox.fontScale - 0.25f); return true; }
+                if (mouseX >= toolbarX + 76 && mouseX <= toolbarX + 88) { this.activeTextBox.fontScale = Math.min(2.0f, this.activeTextBox.fontScale + 0.25f); return true; }
+                if (mouseX >= toolbarX + 90 && mouseX <= toolbarX + 102) { this.activeTextBox.cycleOpacity(); return true; }
+                if (mouseX >= toolbarX + 106 && mouseX <= toolbarX + 118) { commitTextToCanvas(); return true; }
+                if (mouseX >= toolbarX + 120 && mouseX <= toolbarX + 132) { this.isTextModeActive = false; this.activeTextBox = null; return true; }
             }
 
-            // 2. Клики по палитре цветов
+            // Б) Клики по палитре цветов
             if (hasColorPencil && mouseY >= colorBarY && mouseY <= colorBarY + 12) {
                 for (int colorId = 0; colorId < 16; colorId++) {
                     int colorX = toolbarX + 6 + colorId * 8;
@@ -1582,16 +1554,17 @@ public class SketchbookScreen extends Screen {
                 }
             }
 
-            // 3. Изменение размера, перетаскивание и выделение текста мышью
-            int handleSize = 8;
+            // В) Управление рамкой и выделение текста мышью
             if (button == 0) {
-                // Клик по красной ручке изменения размера (правый нижний угол)
+                int handleSize = 8;
+
+                // 1. Изменение размера (правый нижний угол)
                 if (mouseX >= screenX2 - handleSize && mouseX <= screenX2 + handleSize && mouseY >= screenY2 - handleSize && mouseY <= screenY2 + handleSize) {
                     this.isTextBoxResizing = true;
                     return true;
                 }
 
-                // Клик по красной ручке перемещения (верхняя плашка)
+                // 2. Перемещение (верхняя красная плашка)
                 if (mouseX >= screenX1 && mouseX <= screenX2 && mouseY >= screenY1 - 6 && mouseY <= screenY1 + 2) {
                     this.isTextBoxDragging = true;
                     this.textBoxDragStartX = mouseX - screenX1;
@@ -1599,8 +1572,33 @@ public class SketchbookScreen extends Screen {
                     return true;
                 }
 
+                // 3. Установка каретки и начало выделения мышью внутри рамки
+                if (mouseX >= screenX1 && mouseX <= screenX2 && mouseY >= screenY1 && mouseY <= screenY2) {
+                    int charIndex = getCharIndexAtMouse(this.activeTextBox, screenX1, screenY1, screenX2, mouseX, mouseY);
+                    boolean hasShift = Screen.hasShiftDown();
+                    this.activeTextBox.setCaret(charIndex, hasShift);
+                    this.isTextSelectingWithMouse = true;
+                    return true;
+                }
+            }
+
+            // БЛОКИРОВКА: Если кликнули мимо активной рамки — поглощаем клик и НЕ создаём новое поле!
+            return true;
+        }
+
+        // 3. Создание нового текстового поля (СРАБАТЫВАЕТ ТОЛЬКО ЕСЛИ НЕТ АКТИВНОГО ПОЛЯ!)
+        if (this.activeTool == Tool.TEXT && !this.isTextModeActive && this.activeTextBox == null && button == 0) {
+            double physicalCellSize = (double) this.scale / this.resolutionMultiplier;
+            int canvasX = (int) ((lMouseX - canvasScreenLeft) / physicalCellSize);
+            int canvasY = (int) ((lMouseY - renderY) / physicalCellSize);
+
+            if (canvasX >= 0 && canvasX < 126 && canvasY >= 0 && canvasY < 192) {
+                this.activeTextBox = new TextBoxState(canvasX, canvasY);
+                this.isTextModeActive = true;
+                return true;
             }
         }
+
 
         // 3. Создание новой текстовой зоны при клике по холсту
         if (this.activeTool == Tool.TEXT && button == 0) {

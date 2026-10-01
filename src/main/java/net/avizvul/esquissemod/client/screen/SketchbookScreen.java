@@ -464,6 +464,8 @@ public class SketchbookScreen extends Screen {
         guiGraphics.drawString(this.font, label, x + 3, y + 4, isActive ? 0xFFFFFF00 : 0xFFFFFFFF, false);
     }
 
+    //_________________________________________________________________________________
+
     private void renderContent(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         this.lastMouseX = mouseX;
         this.lastMouseY = mouseY;
@@ -907,86 +909,81 @@ public class SketchbookScreen extends Screen {
                 guiGraphics.fill(caretX, caretY, caretX + 1, caretY + lineH, 0xFFFFFFFF);
             }
 
-            // Плавающая панель форматирования
-            int toolbarX = screenX1;
-            int toolbarY = screenY2 + 6;
+            // --- ПАНЕЛЬ ФОРМАТИРОВАНИЯ ТЕКСТА ---
+            if (this.isTextModeActive && this.activeTextBox != null) {
+                TextBoxState box = this.activeTextBox;
 
-            // Фон панели
-            guiGraphics.fill(toolbarX, toolbarY, toolbarX + 136, toolbarY + 20, 0xE0000000);
+                int toolbarX = screenX1;
+                int toolbarY = screenY2 + 6;
 
-            // Опрос динамической активности каждого стиля
-            boolean isBoldActive = box.isStyleActive(TextBoxState.StyleType.BOLD);
-            boolean isItalicActive = box.isStyleActive(TextBoxState.StyleType.ITALIC);
-            boolean isUnderlineActive = box.isStyleActive(TextBoxState.StyleType.UNDERLINE);
-            boolean isStrikethroughActive = box.isStyleActive(TextBoxState.StyleType.STRIKETHROUGH);
+                // 1. Верхняя панель (единая ширина 138px)
+                guiGraphics.fill(toolbarX, toolbarY, toolbarX + 138, toolbarY + 20, 0xE0000000);
 
-            // Кнопка Bold (B)
-            int bBg = isBoldActive ? 0xFF007ACC : 0x40FFFFFF;
-            guiGraphics.fill(toolbarX + 4, toolbarY + 3, toolbarX + 16, toolbarY + 17, bBg);
-            guiGraphics.drawString(this.font, "§lB§r", toolbarX + 7, toolbarY + 5, 0xFFFFFFFF, false);
+                boolean isBoldActive = box.isStyleActive(TextBoxState.StyleType.BOLD);
+                boolean isItalicActive = box.isStyleActive(TextBoxState.StyleType.ITALIC);
+                boolean isUnderlineActive = box.isStyleActive(TextBoxState.StyleType.UNDERLINE);
+                boolean isStrikethroughActive = box.isStyleActive(TextBoxState.StyleType.STRIKETHROUGH);
 
-            // Кнопка Italic (I)
-            int iBg = isItalicActive ? 0xFF007ACC : 0x40FFFFFF;
-            guiGraphics.fill(toolbarX + 18, toolbarY + 3, toolbarX + 30, toolbarY + 17, iBg);
-            guiGraphics.drawString(this.font, "§oI§r", toolbarX + 22, toolbarY + 5, 0xFFFFFFFF, false);
+                // Стили B, I, U, S
+                guiGraphics.fill(toolbarX + 4, toolbarY + 3, toolbarX + 16, toolbarY + 17, isBoldActive ? 0xFF007ACC : 0x40FFFFFF);
+                guiGraphics.drawString(this.font, "§lB§r", toolbarX + 7, toolbarY + 5, 0xFFFFFFFF, false);
 
-            // Кнопка Underline (U)
-            int uBg = isUnderlineActive ? 0xFF007ACC : 0x40FFFFFF;
-            guiGraphics.fill(toolbarX + 32, toolbarY + 3, toolbarX + 44, toolbarY + 17, uBg);
-            guiGraphics.drawString(this.font, "§nU§r", toolbarX + 36, toolbarY + 5, 0xFFFFFFFF, false);
+                guiGraphics.fill(toolbarX + 18, toolbarY + 3, toolbarX + 30, toolbarY + 17, isItalicActive ? 0xFF007ACC : 0x40FFFFFF);
+                guiGraphics.drawString(this.font, "§oI§r", toolbarX + 22, toolbarY + 5, 0xFFFFFFFF, false);
 
-            // Кнопка Strikethrough (S)
-            int sBg = isStrikethroughActive ? 0xFF007ACC : 0x40FFFFFF;
-            guiGraphics.fill(toolbarX + 46, toolbarY + 3, toolbarX + 58, toolbarY + 17, sBg);
-            guiGraphics.drawString(this.font, "§mS§r", toolbarX + 50, toolbarY + 5, 0xFFFFFFFF, false);
+                guiGraphics.fill(toolbarX + 32, toolbarY + 3, toolbarX + 44, toolbarY + 17, isUnderlineActive ? 0xFF007ACC : 0x40FFFFFF);
+                guiGraphics.drawString(this.font, "§nU§r", toolbarX + 36, toolbarY + 5, 0xFFFFFFFF, false);
 
-            // Размер шрифта A- и A+
-            guiGraphics.fill(toolbarX + 66, toolbarY + 3, toolbarX + 78, toolbarY + 17, 0x40FFFFFF);
-            guiGraphics.drawString(this.font, "-", toolbarX + 70, toolbarY + 5, 0xFFFFFFFF, false);
+                guiGraphics.fill(toolbarX + 46, toolbarY + 3, toolbarX + 58, toolbarY + 17, isStrikethroughActive ? 0xFF007ACC : 0x40FFFFFF);
+                guiGraphics.drawString(this.font, "§mS§r", toolbarX + 50, toolbarY + 5, 0xFFFFFFFF, false);
 
-            guiGraphics.fill(toolbarX + 82, toolbarY + 3, toolbarX + 94, toolbarY + 17, 0x40FFFFFF);
-            guiGraphics.drawString(this.font, "+", toolbarX + 86, toolbarY + 5, 0xFFFFFFFF, false);
+                // Масштаб текста - и +
+                guiGraphics.fill(toolbarX + 62, toolbarY + 3, toolbarX + 74, toolbarY + 17, 0x40FFFFFF);
+                guiGraphics.drawString(this.font, "-", toolbarX + 66, toolbarY + 5, 0xFFFFFFFF, false);
 
-            // КНОПКА ПРОЗРАЧНОСТИ H/M/S (между + и ✓)
-            String opacityLabel = (box.textOpacityLevel == 3) ? "H" : (box.textOpacityLevel == 2) ? "M" : "S";
-            guiGraphics.fill(toolbarX + 92, toolbarY + 3, toolbarX + 104, toolbarY + 17, 0xFF007ACC);
-            guiGraphics.drawString(this.font, opacityLabel, toolbarX + 96, toolbarY + 5, 0xFFFFFFFF, false);
+                guiGraphics.fill(toolbarX + 76, toolbarY + 3, toolbarX + 88, toolbarY + 17, 0x40FFFFFF);
+                guiGraphics.drawString(this.font, "+", toolbarX + 80, toolbarY + 5, 0xFFFFFFFF, false);
 
-            // Кнопка «Применить» (✓)
-            guiGraphics.fill(toolbarX + 104, toolbarY + 3, toolbarX + 116, toolbarY + 17, 0xFF228B22);
-            guiGraphics.drawString(this.font, "v", toolbarX + 108, toolbarY + 5, 0xFFFFFFFF, false);
+                // Прозрачность H / M / S
+                String opacityLabel = (box.textOpacityLevel == 3) ? "H" : (box.textOpacityLevel == 2) ? "M" : "S";
+                guiGraphics.fill(toolbarX + 90, toolbarY + 3, toolbarX + 102, toolbarY + 17, 0xFF007ACC);
+                guiGraphics.drawString(this.font, opacityLabel, toolbarX + 94, toolbarY + 5, 0xFFFFFFFF, false);
 
-            // Кнопка «Отмена» (✗)
-            guiGraphics.fill(toolbarX + 120, toolbarY + 3, toolbarX + 132, toolbarY + 17, 0xFFB22222);
-            guiGraphics.drawString(this.font, "x", toolbarX + 124, toolbarY + 5, 0xFFFFFFFF, false);
+                // Кнопка «Применить» (v)
+                guiGraphics.fill(toolbarX + 106, toolbarY + 3, toolbarX + 118, toolbarY + 17, 0xFF228B22);
+                guiGraphics.drawString(this.font, "v", toolbarX + 110, toolbarY + 5, 0xFFFFFFFF, false);
 
-            // 2. Нижняя панель цветов (2 ряда по 8 квадратиков 5x5 px)
-            boolean hasColorPencil = !getColorPencilStack().isEmpty();
-            if (hasColorPencil) {
-                int colorBarY = toolbarY + 20;
-                guiGraphics.fill(toolbarX, colorBarY, toolbarX + 138, colorBarY + 18, 0xE0000000);
+                // Кнопка «Отмена» (x)
+                guiGraphics.fill(toolbarX + 120, toolbarY + 3, toolbarX + 132, toolbarY + 17, 0xFFB22222);
+                guiGraphics.drawString(this.font, "x", toolbarX + 124, toolbarY + 5, 0xFFFFFFFF, false);
 
-                for (int row = 0; row < 2; row++) {
-                    for (int col = 0; col < 8; col++) {
-                        int colorId = row * 8 + col;
-                        int cx = toolbarX + 6 + col * 8;
-                        int cy = colorBarY + 3 + row * 7;
+                // 2. Нижняя панель цветов (ширина 138px)
+                boolean hasColorPencil = !getColorPencilStack().isEmpty();
+                if (hasColorPencil) {
+                    int colorBarY = toolbarY + 20;
+                    guiGraphics.fill(toolbarX, colorBarY, toolbarX + 138, colorBarY + 18, 0xE0000000);
 
-                        int rgb = net.minecraft.world.item.DyeColor.byId(colorId).getTextureDiffuseColor() | 0xFF000000;
-                        boolean isSelected = (box.pendingColorId == colorId);
+                    for (int row = 0; row < 2; row++) {
+                        for (int col = 0; col < 8; col++) {
+                            int colorId = row * 8 + col;
+                            int cx = toolbarX + 6 + col * 8;
+                            int cy = colorBarY + 3 + row * 7;
 
-                        // Окантовка для активного цвета
-                        if (isSelected) {
-                            guiGraphics.fill(cx - 1, cy - 1, cx + 6, cy + 6, 0xFFFFFFFF);
+                            int rgb = net.minecraft.world.item.DyeColor.byId(colorId).getTextureDiffuseColor() | 0xFF000000;
+                            boolean isSelected = (box.pendingColorId == colorId);
+
+                            if (isSelected) {
+                                guiGraphics.fill(cx - 1, cy - 1, cx + 6, cy + 6, 0xFFFFFFFF);
+                            }
+                            guiGraphics.fill(cx, cy, cx + 5, cy + 5, rgb);
                         }
-                        guiGraphics.fill(cx, cy, cx + 5, cy + 5, rgb);
                     }
-
-
                 }
             }
         }
     }
+
+    //_________________________________________________________________________________
 
     @Override
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
@@ -1355,6 +1352,7 @@ public class SketchbookScreen extends Screen {
         }
     }
 
+//_________________________________________________________________________________
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
@@ -1491,50 +1489,42 @@ public class SketchbookScreen extends Screen {
         // 2. Взаимодействие с активной текстовой рамкой и панелью форматирования
         if (this.isTextModeActive && this.activeTextBox != null) {
             TextBoxState box = this.activeTextBox;
-            double pCell = (double) this.scale / this.resolutionMultiplier;
 
-            int screenX1 = canvasScreenLeft + (int) (box.x1 * pCell);
-            int screenY1 = renderY + (int) (box.y1 * pCell);
-            int screenX2 = canvasScreenLeft + (int) (box.x2 * pCell);
-            int screenY2 = renderY + (int) (box.y2 * pCell);
-
-            int handleSize = 8;
             int toolbarX = screenX1;
             int toolbarY = screenY2 + 6;
+            int colorBarY = toolbarY + 20;
+            boolean hasColorPencil = !getColorPencilStack().isEmpty();
 
+            // 1. Клики по верхней панели
             if (mouseY >= toolbarY && mouseY <= toolbarY + 20) {
                 if (mouseX >= toolbarX + 4 && mouseX <= toolbarX + 16) { box.applyFormattingCode("§l"); return true; }
                 if (mouseX >= toolbarX + 18 && mouseX <= toolbarX + 30) { box.applyFormattingCode("§o"); return true; }
                 if (mouseX >= toolbarX + 32 && mouseX <= toolbarX + 44) { box.applyFormattingCode("§n"); return true; }
                 if (mouseX >= toolbarX + 46 && mouseX <= toolbarX + 58) { box.applyFormattingCode("§m"); return true; }
-                if (mouseX >= toolbarX + 66 && mouseX <= toolbarX + 78) { box.fontScale = Math.max(0.5f, box.fontScale - 0.25f); return true; }
-                if (mouseX >= toolbarX + 82 && mouseX <= toolbarX + 94) { box.fontScale = Math.min(2.0f, box.fontScale + 0.25f); return true; }
-                if (mouseX >= toolbarX + 104 && mouseX <= toolbarX + 116) { commitTextToCanvas(); return true; }
+                if (mouseX >= toolbarX + 62 && mouseX <= toolbarX + 74) { box.fontScale = Math.max(0.5f, box.fontScale - 0.25f); return true; }
+                if (mouseX >= toolbarX + 76 && mouseX <= toolbarX + 88) { box.fontScale = Math.min(2.0f, box.fontScale + 0.25f); return true; }
+                if (mouseX >= toolbarX + 90 && mouseX <= toolbarX + 102) { box.cycleOpacity(); return true; } // Теперь клик по H/M/S работает!
+                if (mouseX >= toolbarX + 106 && mouseX <= toolbarX + 118) { commitTextToCanvas(); return true; }
                 if (mouseX >= toolbarX + 120 && mouseX <= toolbarX + 132) { this.isTextModeActive = false; this.activeTextBox = null; return true; }
             }
 
-            if (button == 0) {
-                if (mouseX >= screenX2 - handleSize && mouseX <= screenX2 + handleSize && mouseY >= screenY2 - handleSize && mouseY <= screenY2 + handleSize) {
-                    this.isTextBoxResizing = true;
-                    return true;
-                }
+            // 2. Клики по палитре цветов
+            if (hasColorPencil && mouseY >= colorBarY && mouseY <= colorBarY + 18) {
+                for (int row = 0; row < 2; row++) {
+                    for (int col = 0; col < 8; col++) {
+                        int colorId = row * 8 + col;
+                        int cx = toolbarX + 6 + col * 8;
+                        int cy = colorBarY + 3 + row * 7;
 
-                if (mouseX >= screenX1 && mouseX <= screenX2 && mouseY >= screenY1 - 6 && mouseY <= screenY1 + 2) {
-                    this.isTextBoxDragging = true;
-                    this.textBoxDragStartX = mouseX - screenX1;
-                    this.textBoxDragStartY = mouseY - screenY1;
-                    return true;
-                }
-
-                if (mouseX >= screenX1 && mouseX <= screenX2 && mouseY >= screenY1 && mouseY <= screenY2) {
-                    int charIndex = getCharIndexAtMouse(box, screenX1, screenY1, screenX2, mouseX, mouseY);
-                    boolean hasShift = Screen.hasShiftDown();
-                    box.setCaret(charIndex, hasShift);
-                    this.isTextSelectingWithMouse = true;
-                    return true;
+                        if (mouseX >= cx - 1 && mouseX <= cx + 6 && mouseY >= cy - 1 && mouseY <= cy + 6) {
+                            box.applyColor(colorId);
+                            return true;
+                        }
+                    }
                 }
             }
         }
+
 
         // 3. Создание новой текстовой зоны при клике по холсту
         if (this.activeTool == Tool.TEXT && button == 0) {
@@ -1719,8 +1709,6 @@ public class SketchbookScreen extends Screen {
         return super.mouseClicked(mouseX, mouseY, button);
     }
 
-
-
     @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
         // 1. Выделение букв протяжкой мыши
@@ -1822,7 +1810,6 @@ public class SketchbookScreen extends Screen {
 
         return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
     }
-
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
@@ -2028,6 +2015,7 @@ public class SketchbookScreen extends Screen {
         return super.keyReleased(keyCode, scanCode, modifiers);
     }
 
+//_________________________________________________________________________________
 
     public static class StyledChar {
         public char ch;
@@ -2418,7 +2406,6 @@ public class SketchbookScreen extends Screen {
     }
 
 
-
     private int getActiveTextColorArgb() {
         int hardness = getHardness();
         int alpha = (hardness == 1) ? 64 : (hardness == 2 ? 128 : 255);
@@ -2481,6 +2468,7 @@ public class SketchbookScreen extends Screen {
         this.activeTextBox = null;
     }
 
+//_________________________________________________________________________________
 
     @Override
     public void onClose() {

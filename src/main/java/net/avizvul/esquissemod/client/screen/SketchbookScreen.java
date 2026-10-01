@@ -131,23 +131,23 @@ public class SketchbookScreen extends Screen {
 
 
     private int getCharIndexAtMouse(TextBoxState box, int screenX1, int screenY1, int screenX2, double mouseX, double mouseY) {
-        // Точный расчёт ширины в реальных экранных пикселях (соответствует renderContent)
-        int maxW = Math.max(10, (int) ((screenX2 - screenX1 - 4) / box.fontScale));
+        double pCell = (double) this.scale / this.resolutionMultiplier;
+        float renderScale = (float) (box.fontScale * pCell);
+
+        int maxW = Math.max(10, (int) ((screenX2 - screenX1 - 4) / renderScale));
         java.util.List<TextBoxState.TextLine> lines = box.getWrappedLines(this.font, maxW);
 
-        // 1. Определение строки по Y-координате мыши
-        double relativeY = (mouseY - (screenY1 + 2)) / box.fontScale;
+        double relativeY = (mouseY - (screenY1 + 2)) / renderScale;
         int lineIdx = (int) (relativeY / 9.0);
         lineIdx = Math.max(0, Math.min(lines.size() - 1, lineIdx));
 
         TextBoxState.TextLine targetLine = lines.get(lineIdx);
-        double relativeX = (mouseX - (screenX1 + 2)) / box.fontScale;
+        double relativeX = (mouseX - (screenX1 + 2)) / renderScale;
 
         if (relativeX <= 0) {
             return targetLine.startCharIndex;
         }
 
-        // 2. Определение точного символа на этой строке по X-координате мыши
         int bestIndex = targetLine.startCharIndex;
         double minDiff = Double.MAX_VALUE;
 
@@ -155,6 +155,7 @@ public class SketchbookScreen extends Screen {
             String sub = box.getFormattedSubstring(targetLine.startCharIndex, i);
             int widthSoFar = this.font.width(sub);
             double diff = Math.abs(relativeX - widthSoFar);
+
             if (diff < minDiff) {
                 minDiff = diff;
                 bestIndex = i;
@@ -578,21 +579,22 @@ public class SketchbookScreen extends Screen {
                     int elemX = canvasScreenLeft + (int) (elem.x() * pCell) + 2;
                     int elemY = renderY + (int) (elem.y() * pCell) + 2;
 
+                    float renderScale = (float) (elem.scale() * pCell);
                     net.minecraft.network.chat.Component comp = net.minecraft.network.chat.Component.literal(elem.text());
-                    int maxW = Math.max(10, (int) ((125 - elem.x()) * pCell / elem.scale()));
+                    int maxW = Math.max(10, (int) ((125 - elem.x()) * pCell / renderScale));
                     java.util.List<net.minecraft.util.FormattedCharSequence> lines = this.font.split(comp, maxW);
 
-                    int lineH = (int) (9 * elem.scale());
+                    int lineH = (int) (9 * renderScale);
+
                     for (int l = 0; l < lines.size(); l++) {
                         guiGraphics.pose().pushPose();
                         guiGraphics.pose().translate(elemX, elemY + l * lineH, 0);
-                        guiGraphics.pose().scale(elem.scale(), elem.scale(), 1.0f);
+                        guiGraphics.pose().scale(renderScale, renderScale, 1.0f);
                         guiGraphics.drawString(this.font, lines.get(l), 0, 0, elem.color(), false);
                         guiGraphics.pose().popPose();
                     }
                 }
             }
-
             com.mojang.blaze3d.systems.RenderSystem.disableBlend();
         }
 
@@ -873,16 +875,17 @@ public class SketchbookScreen extends Screen {
             guiGraphics.fill(resX1, resY1, resX2, resY2, redColor);
             guiGraphics.fill(resX1 + 2, resY1 + 2, resX2 - 2, resY2 - 2, 0xFFFFFFFF);
 
-            // 3. Расчёт перенесённых строк
-            int maxW = Math.max(10, (int) ((screenX2 - screenX1 - 4) / box.fontScale));
-            java.util.List<TextBoxState.TextLine> lines = box.getWrappedLines(this.font, maxW);
-            int lineH = (int) (9 * box.fontScale);
+            // 3. Расчёт перенесённых строк и масштаба
+            float renderScale = (float) (box.fontScale * pCell);
 
-            // 4. Подсветка выделения (ПОСТРОЧНО)
+            int maxW = Math.max(10, (int) ((screenX2 - screenX1 - 4) / renderScale));
+            java.util.List<TextBoxState.TextLine> lines = box.getWrappedLines(this.font, maxW);
+            int lineH = (int) (9 * renderScale);
+
+// 4. Подсветка выделения (ПОСТРОЧНО)
             if (box.hasSelection()) {
                 int min = box.getSelectionMin();
                 int max = box.getSelectionMax();
-
                 for (int l = 0; l < lines.size(); l++) {
                     TextBoxState.TextLine line = lines.get(l);
                     int lineY = screenY1 + 2 + l * lineH;
@@ -890,24 +893,22 @@ public class SketchbookScreen extends Screen {
                     if (max > line.startCharIndex && min <= line.endCharIndex) {
                         int selStart = Math.max(min, line.startCharIndex);
                         int selEnd = Math.min(max, line.endCharIndex);
-
                         String textBefore = box.getFormattedSubstring(line.startCharIndex, selStart);
                         String textSelected = box.getFormattedSubstring(line.startCharIndex, selEnd);
 
-                        int hX1 = screenX1 + 2 + (int) (this.font.width(textBefore) * box.fontScale);
-                        int hX2 = screenX1 + 2 + (int) (this.font.width(textSelected) * box.fontScale);
+                        int hX1 = screenX1 + 2 + (int) (this.font.width(textBefore) * renderScale);
+                        int hX2 = screenX1 + 2 + (int) (this.font.width(textSelected) * renderScale);
 
                         if (max > line.endCharIndex && line.endCharIndex > line.startCharIndex) {
-                            hX2 = Math.max(hX2, screenX1 + 2 + (int) (line.width * box.fontScale) + 3);
+                            hX2 = Math.max(hX2, screenX1 + 2 + (int) (line.width * renderScale) + 3);
                         }
 
-                        // Синий прямоугольник выделения для текущей строки
                         guiGraphics.fill(hX1, lineY, hX2, lineY + lineH, 0x802266FF);
                     }
                 }
             }
 
-            // 5. Отрисовка текста (ПОСТРОЧНО)
+// 5. Отрисовка текста (ПОСТРОЧНО)
             int textColor = getActiveTextColorArgb();
             for (int l = 0; l < lines.size(); l++) {
                 TextBoxState.TextLine line = lines.get(l);
@@ -915,12 +916,12 @@ public class SketchbookScreen extends Screen {
 
                 guiGraphics.pose().pushPose();
                 guiGraphics.pose().translate(screenX1 + 2, lineY, 0);
-                guiGraphics.pose().scale(box.fontScale, box.fontScale, 1.0f);
+                guiGraphics.pose().scale(renderScale, renderScale, 1.0f);
                 guiGraphics.drawString(this.font, line.formattedText, 0, 0, textColor, false);
                 guiGraphics.pose().popPose();
             }
 
-            // 6. Отрисовка мигающей каретки (в точных 2D координатах)
+            // 6. Отрисовка мигающей каретки
             int caretLineIdx = 0;
             TextBoxState.TextLine caretLine = lines.get(0);
             for (int l = 0; l < lines.size(); l++) {
@@ -933,12 +934,13 @@ public class SketchbookScreen extends Screen {
             }
 
             String textBeforeCaret = box.getFormattedSubstring(caretLine.startCharIndex, box.caret);
-            int caretX = screenX1 + 2 + (int) (this.font.width(textBeforeCaret) * box.fontScale);
+            int caretX = screenX1 + 2 + (int) (this.font.width(textBeforeCaret) * renderScale);
             int caretY = screenY1 + 2 + caretLineIdx * lineH;
 
             if (System.currentTimeMillis() / 500 % 2 == 0) {
                 guiGraphics.fill(caretX, caretY, caretX + 1, caretY + lineH, 0xFFFFFFFF);
             }
+
 
             // --- ПАНЕЛЬ ФОРМАТИРОВАНИЯ ТЕКСТА ---
             if (this.isTextModeActive && this.activeTextBox != null) {

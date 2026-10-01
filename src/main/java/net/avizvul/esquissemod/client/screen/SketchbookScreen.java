@@ -1322,7 +1322,7 @@ public class SketchbookScreen extends Screen {
         boolean hasCompass = hasTool(ModItems.DRAWING_COMPASS.get());
         boolean hasColorMarker = hasTool(ModItems.COLOR_MARKER.get());
 
-        ItemStack colorPencilStack = getColorPencilStack();
+        net.minecraft.world.item.ItemStack colorPencilStack = getColorPencilStack();
         boolean hasColorPencil = !colorPencilStack.isEmpty();
         boolean hasRuler = hasTool(net.avizvul.esquissemod.item.ModItems.RULER.get());
         boolean hasMagGlass = hasTool(ModItems.MAGNIFYING_GLASS.get());
@@ -1331,7 +1331,6 @@ public class SketchbookScreen extends Screen {
                 (hasColorMarker && !getColorMarkerStack().getOrDefault(ModDataComponents.STORED_COLORS.get(), new java.util.ArrayList<>()).isEmpty());
 
         ToolButtonCoords toolCoords = getToolButtonCoords();
-
         int renderX = (int) this.exactGuiLeft;
         int renderY = (int) this.exactGuiTop;
         int drawWidth = this.fileWidth * this.scale;
@@ -1339,7 +1338,6 @@ public class SketchbookScreen extends Screen {
 
         int scaledBtnWidth = toolCoords.scaledBtnWidth();
         int scaledBtnHeight = toolCoords.scaledBtnHeight();
-
         int pencilX = toolCoords.pencilX();
         int colorPencilX = toolCoords.colorPencilX();
         int colorMarkerX = toolCoords.colorMarkerX();
@@ -1357,7 +1355,6 @@ public class SketchbookScreen extends Screen {
         int btnY = renderY + ((this.fileHeight - btnFileHeight) / 2) * this.scale;
 
         int baseY = this.height - (scaledBtnHeight / 2);
-
         int pencilY = (this.activeTool == Tool.PENCIL) ? peekY : baseY;
         int colorPencilY = (this.activeTool == Tool.COLOR_PENCIL) ? peekY : baseY;
         int colorMarkerY = (this.activeTool == Tool.COLOR_MARKER) ? peekY : baseY;
@@ -1366,7 +1363,6 @@ public class SketchbookScreen extends Screen {
         int kneadedY = (this.activeTool == Tool.KNEADED_ERASER) ? peekY : baseY;
 
         TabCoords coords = getTabCoords(renderX, renderY, drawWidth);
-
         int scaledTabWidth = this.tabWidth * this.tabScale;
         int scaledTabHeight = this.tabHeight * this.tabScale;
         int scaledFrameWidth = this.frameWidth * this.scale;
@@ -1378,9 +1374,50 @@ public class SketchbookScreen extends Screen {
         int blueZoneTop = renderY;
         int blueZoneBottom = renderY + (this.canvasHeight * this.scale);
 
-        double[] logicalMouse = getLogicalMouse(mouseX, mouseY);
+    double[] logicalMouse = getLogicalMouse(mouseX, mouseY);
         double lMouseX = logicalMouse[0];
         double lMouseY = logicalMouse[1];
+
+        // --- ОБЩАЯ ПРОВЕРКА ОТРЫВА СТРАНИЦЫ (ЛКМ И ПКМ) ---
+        int tearHitMargin = 4; // Расширяем область клика на 4px для удобства
+        if (lMouseX >= (blueZoneLeft - tearHitMargin) && lMouseX <= (blueZoneLeft + blueZoneWidth + tearHitMargin) && lMouseY >= blueZoneTop && lMouseY <= blueZoneBottom) {
+            if (button == 0 || button == 1) {
+                // 1. Сохраняем пиксели и векторный текст перед отрывом
+                SketchData currentData = SketchData.fromArrayAndTexts(this.pixels, this.textElements);
+                net.neoforged.neoforge.network.PacketDistributor.sendToServer(
+                        new SketchbookSavePayload(this.currentPageIndex, currentData, this.pencilPixelsUsed, this.eraserPixelsUsed)
+                );
+
+                // 2. Отправляем пакет отрыва на сервер
+                net.neoforged.neoforge.network.PacketDistributor.sendToServer(new TearPagePayload(this.currentPageIndex));
+
+                // 3. Звуковой эффект
+                if (this.minecraft != null && this.minecraft.player != null) {
+                    this.minecraft.player.playSound(net.minecraft.sounds.SoundEvents.BOOK_PAGE_TURN, 1.0f, 1.0f);
+                }
+
+                // 4. Локальное удаление и перезагрузка страницы
+                if (this.pages != null && !this.pages.isEmpty() && this.currentPageIndex >= 0 && this.currentPageIndex < this.pages.size()) {
+                    this.pages.remove(this.currentPageIndex);
+
+                    if (this.pages.isEmpty()) {
+                        this.onClose();
+                        return true;
+                    }
+
+                    if (this.currentPageIndex >= this.pages.size()) {
+                        this.currentPageIndex = this.pages.size() - 1;
+                    }
+
+                    net.minecraft.world.item.ItemStack stack = this.minecraft.player.getMainHandItem();
+                    if (!stack.is(ModItems.SKETCHBOOK.get())) stack = this.minecraft.player.getOffhandItem();
+                    stack.set(ModDataComponents.SKETCHBOOK_PAGES.get(), new java.util.ArrayList<>(this.pages));
+
+                    loadPagePixels();
+                }
+                return true;
+            }
+        }
 
         // 1. Клик по кнопке "(Т)" над выбранным карандашом
         boolean isPencilSelected = (this.activeTool == Tool.PENCIL) || (this.activeTool == Tool.TEXT && this.previousDrawingTool == Tool.PENCIL);
@@ -1416,7 +1453,6 @@ public class SketchbookScreen extends Screen {
             int toolbarX = screenX1;
             int toolbarY = screenY2 + 6;
 
-            // Панель форматирования
             if (mouseY >= toolbarY && mouseY <= toolbarY + 20) {
                 if (mouseX >= toolbarX + 4 && mouseX <= toolbarX + 16) { box.applyFormattingCode("§l"); return true; }
                 if (mouseX >= toolbarX + 18 && mouseX <= toolbarX + 30) { box.applyFormattingCode("§o"); return true; }
@@ -1429,13 +1465,11 @@ public class SketchbookScreen extends Screen {
             }
 
             if (button == 0) {
-                // Изменение размера рамки за угловой маркер
                 if (mouseX >= screenX2 - handleSize && mouseX <= screenX2 + handleSize && mouseY >= screenY2 - handleSize && mouseY <= screenY2 + handleSize) {
                     this.isTextBoxResizing = true;
                     return true;
                 }
 
-                // Перетаскивание рамки за верхний край
                 if (mouseX >= screenX1 && mouseX <= screenX2 && mouseY >= screenY1 - 6 && mouseY <= screenY1 + 2) {
                     this.isTextBoxDragging = true;
                     this.textBoxDragStartX = mouseX - screenX1;
@@ -1443,11 +1477,9 @@ public class SketchbookScreen extends Screen {
                     return true;
                 }
 
-                // Клик внутрь области текста — установка каретки и начало выделения
                 if (mouseX >= screenX1 && mouseX <= screenX2 && mouseY >= screenY1 && mouseY <= screenY2) {
                     int charIndex = getCharIndexAtMouse(box, screenX1, screenY1, screenX2, mouseX, mouseY);
                     boolean hasShift = Screen.hasShiftDown();
-
                     box.setCaret(charIndex, hasShift);
                     this.isTextSelectingWithMouse = true;
                     return true;
@@ -1491,7 +1523,6 @@ public class SketchbookScreen extends Screen {
             if (hasKneaded && mouseX >= kneadedX && mouseX < kneadedX + scaledBtnWidth && mouseY >= kneadedY && mouseY < kneadedY + scaledBtnHeight) {
                 this.activeTool = Tool.KNEADED_ERASER; return true;
             }
-
             if (hasRuler && mouseX >= rulerX && mouseX < rulerX + scaledBtnWidth && mouseY >= peekY && mouseY < peekY + scaledBtnHeight) {
                 this.isRulerActive = !this.isRulerActive; return true;
             }
@@ -1520,12 +1551,15 @@ public class SketchbookScreen extends Screen {
             if (lMouseX >= btnX && lMouseX < btnX + (btnFileWidth * this.scale) && lMouseY >= btnY && lMouseY < btnY + (btnFileHeight * this.scale)) {
                 this.isRotating = true; return true;
             }
+
             if (this.currentPageIndex > 0 && lMouseX >= coords.tabX() && lMouseX < coords.tabX() + scaledTabWidth && lMouseY >= coords.backTabY() && lMouseY < coords.backTabY() + scaledTabHeight) {
                 turnPage(this.currentPageIndex - 1); return true;
             }
+
             if (this.currentPageIndex < pages.size() - 1 && lMouseX >= coords.tabX() && lMouseX < coords.tabX() + scaledTabWidth && lMouseY >= coords.forwardTabY() && lMouseY < coords.forwardTabY() + scaledTabHeight) {
                 turnPage(this.currentPageIndex + 1); return true;
             }
+
             if (lMouseX >= renderX && lMouseX < (renderX + scaledFrameWidth) && lMouseY >= renderY && lMouseY < (renderY + scaledImageHeight)) {
                 this.isDragging = true; return true;
             }
@@ -1545,8 +1579,8 @@ public class SketchbookScreen extends Screen {
                     this.compassState = CompassState.LOCKED;
                 }
 
-                double[] magnetMouse = applyRulerMagnet(mouseX, mouseY);
-                double[] drawLogical = getLogicalMouse(magnetMouse[0], magnetMouse[1]);
+            double[] magnetMouse = applyRulerMagnet(mouseX, mouseY);
+            double[] drawLogical = getLogicalMouse(magnetMouse[0], magnetMouse[1]);
 
                 if (this.compassState == CompassState.LOCKED) {
                     double angle = Math.atan2(drawLogical[1] - this.compassAnchorY, drawLogical[0] - this.compassAnchorX);
@@ -1568,6 +1602,7 @@ public class SketchbookScreen extends Screen {
                     this.lastLogicalY = drawLogical[1];
                     drawPixel(drawLogical[0], drawLogical[1]);
                 }
+
                 return true;
             }
         }
@@ -1579,40 +1614,6 @@ public class SketchbookScreen extends Screen {
                 clampSketchbook();
                 return true;
             }
-
-            if (lMouseX >= blueZoneLeft && lMouseX <= blueZoneLeft + blueZoneWidth && lMouseY >= blueZoneTop && lMouseY <= blueZoneBottom) {
-                // 1. Сохраняем пиксели и векторный текст текущей страницы перед отрывом
-                SketchData currentData = SketchData.fromArrayAndTexts(this.pixels, this.textElements);
-                net.neoforged.neoforge.network.PacketDistributor.sendToServer(
-                        new SketchbookSavePayload(this.currentPageIndex, currentData, this.pencilPixelsUsed, this.eraserPixelsUsed)
-                );
-
-                // 2. Отправляем пакет отрыва на сервер
-                net.neoforged.neoforge.network.PacketDistributor.sendToServer(new TearPagePayload(this.currentPageIndex));
-
-                // 3. Безопасное удаление из локального списка this.pages
-                if (this.pages != null && !this.pages.isEmpty() && this.currentPageIndex >= 0 && this.currentPageIndex < this.pages.size()) {
-                    this.pages.remove(this.currentPageIndex);
-
-                    if (this.pages.isEmpty()) {
-                        this.onClose();
-                        return true;
-                    }
-
-                    if (this.currentPageIndex >= this.pages.size()) {
-                        this.currentPageIndex = this.pages.size() - 1;
-                    }
-
-                    // Обновляем предмет на клиенте и перезагружаем страницу
-                    net.minecraft.world.item.ItemStack stack = this.minecraft.player.getMainHandItem();
-                    if (!stack.is(ModItems.SKETCHBOOK.get())) stack = this.minecraft.player.getOffhandItem();
-                    stack.set(ModDataComponents.SKETCHBOOK_PAGES.get(), new java.util.ArrayList<>(this.pages));
-
-                    loadPagePixels();
-                }
-                return true;
-            }
-
 
             if (this.isMagnifierLocked) {
                 this.isMagnifierLocked = false;
@@ -1666,9 +1667,9 @@ public class SketchbookScreen extends Screen {
                 return true;
             }
         }
-
         return super.mouseClicked(mouseX, mouseY, button);
     }
+
 
 
     @Override

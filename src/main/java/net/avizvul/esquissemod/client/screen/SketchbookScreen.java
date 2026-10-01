@@ -3,6 +3,7 @@ package net.avizvul.esquissemod.client.screen;
 import net.avizvul.esquissemod.EsquisseMod;
 import net.avizvul.esquissemod.component.ModDataComponents;
 import net.avizvul.esquissemod.component.SketchData;
+import net.avizvul.esquissemod.component.TextElement;
 import net.avizvul.esquissemod.item.ModItems;
 import net.avizvul.esquissemod.network.SketchbookSavePayload;
 import net.avizvul.esquissemod.network.TearPagePayload;
@@ -54,6 +55,7 @@ public class SketchbookScreen extends Screen {
     private final int scale = 3;
     private final int resolutionMultiplier = 2;
 
+    private List<TextElement> textElements = new ArrayList<>();
     private int[][] pixels = new int[canvasWidth * resolutionMultiplier][canvasHeight * resolutionMultiplier];
     private boolean[][] strokePixels;
     private boolean isPageLoaded = false;
@@ -250,9 +252,13 @@ public class SketchbookScreen extends Screen {
         if (this.pages != null && this.currentPageIndex >= 0 && this.currentPageIndex < this.pages.size()) {
             SketchData data = this.pages.get(this.currentPageIndex);
             this.pixels = data.toArray(this.canvasWidth * this.resolutionMultiplier, this.canvasHeight * this.resolutionMultiplier);
+            this.textElements = new ArrayList<>(data.getTextElements());
+        } else {
+            this.textElements = new ArrayList<>();
         }
         this.isCanvasDirty = true;
     }
+
 
     private record TabCoords(int tabX, int backTabY, int forwardTabY) {}
 
@@ -319,7 +325,7 @@ public class SketchbookScreen extends Screen {
         }
 
         if (this.currentPageIndex >= 0 && this.currentPageIndex < pages.size()) {
-            net.avizvul.esquissemod.component.SketchData data = net.avizvul.esquissemod.component.SketchData.fromArray(this.pixels);
+            net.avizvul.esquissemod.component.SketchData data = net.avizvul.esquissemod.component.SketchData.fromArrayAndTexts(this.pixels, this.textElements);
             pages.set(this.currentPageIndex, data);
             stack.set(ModDataComponents.SKETCHBOOK_PAGES.get(), pages);
             net.neoforged.neoforge.network.PacketDistributor.sendToServer(
@@ -549,6 +555,29 @@ public class SketchbookScreen extends Screen {
             int screenWidth = this.canvasWidth * this.scale;
             int screenHeight = this.canvasHeight * this.scale;
             guiGraphics.blit(this.activeCanvasId, canvasScreenLeft, canvasScreenTop, 0.0f, 0.0f, screenWidth, screenHeight, screenWidth, screenHeight);
+            // Отрисовка векторных элементов текущей страницы
+            if (this.textElements != null && !this.textElements.isEmpty()) {
+                double pCell = (double) this.scale / this.resolutionMultiplier;
+
+                for (TextElement elem : this.textElements) {
+                    int elemX = canvasScreenLeft + (int) (elem.x() * pCell) + 2;
+                    int elemY = renderY + (int) (elem.y() * pCell) + 2;
+
+                    net.minecraft.network.chat.Component comp = net.minecraft.network.chat.Component.literal(elem.text());
+                    int maxW = Math.max(10, (int) ((125 - elem.x()) * pCell / elem.scale()));
+                    java.util.List<net.minecraft.util.FormattedCharSequence> lines = this.font.split(comp, maxW);
+
+                    int lineH = (int) (9 * elem.scale());
+                    for (int l = 0; l < lines.size(); l++) {
+                        guiGraphics.pose().pushPose();
+                        guiGraphics.pose().translate(elemX, elemY + l * lineH, 0);
+                        guiGraphics.pose().scale(elem.scale(), elem.scale(), 1.0f);
+                        guiGraphics.drawString(this.font, lines.get(l), 0, 0, elem.color(), false);
+                        guiGraphics.pose().popPose();
+                    }
+                }
+            }
+
             com.mojang.blaze3d.systems.RenderSystem.disableBlend();
         }
 
@@ -1553,7 +1582,7 @@ public class SketchbookScreen extends Screen {
 
             if (lMouseX >= blueZoneLeft && lMouseX <= blueZoneLeft + blueZoneWidth && lMouseY >= blueZoneTop && lMouseY <= blueZoneBottom) {
                 net.neoforged.neoforge.network.PacketDistributor.sendToServer(
-                        new SketchbookSavePayload(this.currentPageIndex, net.avizvul.esquissemod.component.SketchData.fromArray(this.pixels), this.pencilPixelsUsed, this.eraserPixelsUsed)
+                        new SketchbookSavePayload(this.currentPageIndex, net.avizvul.esquissemod.component.SketchData.fromArrayAndTexts(this.pixels, this.textElements), this.pencilPixelsUsed, this.eraserPixelsUsed)
                 );
                 net.neoforged.neoforge.network.PacketDistributor.sendToServer(new TearPagePayload(this.currentPageIndex));
 
@@ -2339,49 +2368,18 @@ public class SketchbookScreen extends Screen {
         TextBoxState box = this.activeTextBox;
         String formattedString = box.toFormattedString();
 
-        if (formattedString.isEmpty()) {
-            this.isTextModeActive = false;
-            this.activeTextBox = null;
-            return;
+        if (!formattedString.isEmpty()) {
+            int textColor = getActiveTextColorArgb();
+            TextElement element = new TextElement(
+                    formattedString,
+                    box.x1,
+                    box.y1,
+                    box.fontScale,
+                    textColor
+            );
+            this.textElements.add(element);
         }
 
-        int textColor = getActiveTextColorArgb();
-        int boxW = box.getWidth();
-        int boxH = box.getHeight();
-
-        // 1. Растеризуем текст в 2D-массив
-    int[][] textPixels = net.avizvul.esquissemod.util.TextRasterizer.rasterize(
-                formattedString,
-                boxW,
-                boxH,
-                box.fontScale,
-                textColor
-        );
-
-        // 2. Безопасное запекание пикселей на холсте с проверкой границ
-        if (textPixels != null && textPixels.length > 0) {
-            int w = textPixels.length;
-
-            for (int x = 0; x < w; x++) {
-                if (textPixels[x] == null) continue;
-                int h = textPixels[x].length;
-
-                for (int y = 0; y < h; y++) {
-                    int px = textPixels[x][y];
-                    if (((px >> 24) & 0xFF) > 0) {
-                        int targetX = box.x1 + x;
-                        int targetY = box.y1 + y;
-
-                        // Защита от выхода за пределы холста (126x192)
-                        if (targetX >= 0 && targetX < 126 && targetY >= 0 && targetY < 192) {
-                            this.pixels[targetX][targetY] = ColorUtils.blendColors(this.pixels[targetX][targetY], px);
-                        }
-                    }
-                }
-            }
-        }
-
-        // 3. Завершение работы с текстовым полем
         this.isCanvasDirty = true;
         this.isTextModeActive = false;
         this.activeTextBox = null;
@@ -2395,7 +2393,7 @@ public class SketchbookScreen extends Screen {
         savedRotationAngle = this.rotationAngle;
         hasSavedState = true;
 
-        SketchData data = SketchData.fromArray(this.pixels);
+        SketchData data = SketchData.fromArrayAndTexts(this.pixels, this.textElements);
 
         if (this.minecraft != null && this.minecraft.player != null) {
             net.minecraft.world.item.ItemStack stack = this.minecraft.player.getMainHandItem();

@@ -1281,7 +1281,7 @@ public class SketchbookScreen extends Screen {
             }
         }
 
-        // 4. Левый клик (ЛКМ) — Выбор всех инструментов и утилит
+        // 4. Левый клик (ЛКМ) — Выбор инструментов, утилит, индикаторов и рисование
         if (button == 0) {
             int baseY = this.height - (scaledBtnHeight / 2);
             int pencilY = (this.activeTool == Tool.PENCIL) ? peekY : baseY;
@@ -1311,7 +1311,7 @@ public class SketchbookScreen extends Screen {
                 this.activeTool = Tool.KNEADED_ERASER; return true;
             }
 
-            // КЛИКИ ПО УТИЛИТАМ (Линейка, Лупа, Циркуль) ЛКМ
+            // Клики по кнопкам утилит (Линейка, Лупа, Циркуль)
             if (hasRuler && mouseX >= rulerX && mouseX < rulerX + scaledBtnWidth && mouseY >= peekY && mouseY < peekY + scaledBtnHeight) {
                 this.isRulerActive = !this.isRulerActive;
                 return true;
@@ -1325,7 +1325,7 @@ public class SketchbookScreen extends Screen {
                 return true;
             }
 
-            // Индикаторы размера
+            // Клики по индикаторам размеров
             Tool effectiveTool = (this.activeTool == Tool.TEXT) ? this.previousDrawingTool : this.activeTool;
             int activeX = switch (effectiveTool) {
                 case PENCIL -> pencilX;
@@ -1341,13 +1341,39 @@ public class SketchbookScreen extends Screen {
                 if (handleSizeIndicatorClick(mouseX, mouseY, activeX, peekY)) return true;
             }
 
-            // Перетаскивание холста / Рисование
+            // Взаимодействие с холстом (Рисование / Использование утилит)
             int scaledCanvasWidth = this.canvasWidth * this.scale;
             int scaledImageHeight = this.fileHeight * this.scale;
+
             if (lMouseX >= canvasScreenLeft && lMouseX < (canvasScreenLeft + scaledCanvasWidth) && lMouseY >= renderY && lMouseY < (renderY + scaledImageHeight)) {
+
+                // 1. Постановка якорной иглы и фиксация радиуса циркуля при клике по холсту
+                if (this.compassState == CompassState.FOLDED) {
+                    this.compassAnchorX = lMouseX;
+                    this.compassAnchorY = lMouseY;
+                    this.compassState = CompassState.ANCHORED;
+                    return true;
+                } else if (this.compassState == CompassState.ANCHORED) {
+                    double dx = lMouseX - this.compassAnchorX;
+                    double dy = lMouseY - this.compassAnchorY;
+                    double dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist > 192.0) dist = 192.0;
+                    this.compassRadius = dist;
+                    this.compassState = CompassState.LOCKED;
+                }
+
+                // 2. Применение магнетизма линейки
                 double[] magnetMouse = applyRulerMagnet(mouseX, mouseY);
                 double[] drawLogical = getLogicalMouse(magnetMouse[0], magnetMouse[1]);
 
+                // 3. Ограничение движения кисти строго по окружности циркуля (LOCKED)
+                if (this.compassState == CompassState.LOCKED) {
+                    double angle = Math.atan2(drawLogical[1] - this.compassAnchorY, drawLogical[0] - this.compassAnchorX);
+                    drawLogical[0] = this.compassAnchorX + this.compassRadius * Math.cos(angle);
+                    drawLogical[1] = this.compassAnchorY + this.compassRadius * Math.sin(angle);
+                }
+
+                // 4. Отрисовка первого пикселя
                 if ((this.activeTool == Tool.PENCIL && hasPencil) ||
                         (this.activeTool == Tool.COLOR_PENCIL && hasColorPencil && hasColors) ||
                         (this.activeTool == Tool.COLOR_MARKER && hasColorMarker && hasColors) ||
@@ -1365,6 +1391,7 @@ public class SketchbookScreen extends Screen {
                 return true;
             }
         }
+
 
         // 5. Правый клик (ПКМ) — Смена твёрдости по кругу и быстрый сброс утилит
         if (button == 1) {

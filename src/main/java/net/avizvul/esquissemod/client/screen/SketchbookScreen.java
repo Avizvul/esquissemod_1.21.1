@@ -1581,29 +1581,38 @@ public class SketchbookScreen extends Screen {
             }
 
             if (lMouseX >= blueZoneLeft && lMouseX <= blueZoneLeft + blueZoneWidth && lMouseY >= blueZoneTop && lMouseY <= blueZoneBottom) {
+                // 1. Сохраняем пиксели и векторный текст текущей страницы перед отрывом
+                SketchData currentData = SketchData.fromArrayAndTexts(this.pixels, this.textElements);
                 net.neoforged.neoforge.network.PacketDistributor.sendToServer(
-                        new SketchbookSavePayload(this.currentPageIndex, net.avizvul.esquissemod.component.SketchData.fromArrayAndTexts(this.pixels, this.textElements), this.pencilPixelsUsed, this.eraserPixelsUsed)
+                        new SketchbookSavePayload(this.currentPageIndex, currentData, this.pencilPixelsUsed, this.eraserPixelsUsed)
                 );
+
+                // 2. Отправляем пакет отрыва на сервер
                 net.neoforged.neoforge.network.PacketDistributor.sendToServer(new TearPagePayload(this.currentPageIndex));
 
-                net.minecraft.world.item.ItemStack stack = this.minecraft.player.getMainHandItem();
-                if (!stack.is(ModItems.SKETCHBOOK.get())) stack = this.minecraft.player.getOffhandItem();
-                java.util.List<net.avizvul.esquissemod.component.SketchData> pages = new java.util.ArrayList<>(stack.getOrDefault(ModDataComponents.SKETCHBOOK_PAGES.get(), new java.util.ArrayList<>()));
-                pages.remove(this.currentPageIndex);
+                // 3. Безопасное удаление из локального списка this.pages
+                if (this.pages != null && !this.pages.isEmpty() && this.currentPageIndex >= 0 && this.currentPageIndex < this.pages.size()) {
+                    this.pages.remove(this.currentPageIndex);
 
-                if (pages.isEmpty()) {
-                    this.onClose();
-                } else {
-                    if (this.currentPageIndex >= pages.size()) this.currentPageIndex = pages.size() - 1;
-                    stack.set(ModDataComponents.SKETCHBOOK_PAGES.get(), pages);
+                    if (this.pages.isEmpty()) {
+                        this.onClose();
+                        return true;
+                    }
 
-                    int w = this.canvasWidth * this.resolutionMultiplier;
-                    int h = this.canvasHeight * this.resolutionMultiplier;
-                    this.pixels = pages.get(this.currentPageIndex).toArray(w, h);
-                    this.isCanvasDirty = true;
+                    if (this.currentPageIndex >= this.pages.size()) {
+                        this.currentPageIndex = this.pages.size() - 1;
+                    }
+
+                    // Обновляем предмет на клиенте и перезагружаем страницу
+                    net.minecraft.world.item.ItemStack stack = this.minecraft.player.getMainHandItem();
+                    if (!stack.is(ModItems.SKETCHBOOK.get())) stack = this.minecraft.player.getOffhandItem();
+                    stack.set(ModDataComponents.SKETCHBOOK_PAGES.get(), new java.util.ArrayList<>(this.pages));
+
+                    loadPagePixels();
                 }
                 return true;
             }
+
 
             if (this.isMagnifierLocked) {
                 this.isMagnifierLocked = false;

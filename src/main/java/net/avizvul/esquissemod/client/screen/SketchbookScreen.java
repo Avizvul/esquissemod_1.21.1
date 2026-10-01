@@ -576,12 +576,12 @@ public class SketchbookScreen extends Screen {
                 double pCell = (double) this.scale / this.resolutionMultiplier;
 
                 for (TextElement elem : this.textElements) {
-                    int elemX = canvasScreenLeft + (int) (elem.x() * pCell) + 2;
-                    int elemY = renderY + (int) (elem.y() * pCell) + 2;
+                    int elemX = canvasScreenLeft + (int) ((elem.x() + 2) * pCell);
+                    int elemY = renderY + (int) ((elem.y() + 2) * pCell);
 
                     float renderScale = (float) (elem.scale() * pCell);
                     net.minecraft.network.chat.Component comp = net.minecraft.network.chat.Component.literal(elem.text());
-                    int maxW = Math.max(10, (int) ((125 - elem.x()) * pCell / renderScale));
+                    int maxW = Math.max(10, (int) ((125 - elem.x() - 2) * pCell / renderScale));
                     java.util.List<net.minecraft.util.FormattedCharSequence> lines = this.font.split(comp, maxW);
 
                     int lineH = (int) (9 * renderScale);
@@ -595,6 +595,7 @@ public class SketchbookScreen extends Screen {
                     }
                 }
             }
+
             com.mojang.blaze3d.systems.RenderSystem.disableBlend();
         }
 
@@ -1719,6 +1720,44 @@ public class SketchbookScreen extends Screen {
 
                 return true;
             }
+
+            // --- ВЫБОР ЦВЕТА НА ПАЛИТРЕ ДЛЯ ЦВЕТНОГО КАРАНДАША И МАРКЕРА ---
+            if (effectiveTool == Tool.COLOR_PENCIL || effectiveTool == Tool.COLOR_MARKER) {
+                net.minecraft.world.item.ItemStack activeColorStack = (effectiveTool == Tool.COLOR_MARKER) ? getColorMarkerStack() : getColorPencilStack();
+
+                if (!activeColorStack.isEmpty()) {
+                    java.util.List<Integer> colors = activeColorStack.getOrDefault(ModDataComponents.STORED_COLORS.get(), new java.util.ArrayList<>());
+
+                    if (!colors.isEmpty()) {
+                        int swatchSize = 12;
+                        for (Swatch swatch : getPaletteLayout()) {
+                            if (mouseX >= swatch.x() && mouseX < swatch.x() + swatchSize &&
+                                    mouseY >= swatch.y() && mouseY < swatch.y() + swatchSize) {
+
+                                if (colors.contains(swatch.colorId())) {
+                                    int colorIndex = colors.indexOf(swatch.colorId());
+
+                                    // 1. Изменяем выбранный цвет прямо в предмете, полученном из getColorPencilStack()
+                                    activeColorStack.set(ModDataComponents.ACTIVE_COLOR_INDEX.get(), colorIndex);
+
+                                    // 2. Синхронизируем с сервером
+                                    net.neoforged.neoforge.network.PacketDistributor.sendToServer(
+                                            new net.avizvul.esquissemod.network.ChangeColorPayload(colorIndex, effectiveTool == Tool.COLOR_MARKER)
+                                    );
+
+                                    // 3. Звук клика
+                                    if (this.minecraft != null && this.minecraft.player != null) {
+                                        this.minecraft.player.playSound(net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK.value(), 1.0f, 1.0f);
+                                    }
+
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
         }
 
         // 5. Правый клик (ПКМ) — Смена твёрдости по кругу и быстрый сброс утилит

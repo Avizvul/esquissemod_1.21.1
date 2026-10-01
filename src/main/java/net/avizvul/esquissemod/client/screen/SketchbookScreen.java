@@ -124,31 +124,43 @@ public class SketchbookScreen extends Screen {
     private Tool previousDrawingTool = Tool.PENCIL; // Хранит инструмент (простой или цветной карандаш)
     private boolean isTextBoxDragging = false;       // Флаг перемещения текстового поля зажатием
     private boolean isTextBoxResizing = false;       // Флаг изменения размера текстового поля зажатием
+    private boolean isTextSelectingWithMouse = false;
     private double textBoxDragStartX, textBoxDragStartY;
 
 
-    private int getCharIndexAtMouse(TextBoxState box, int screenX1, double mouseX) {
-        double relativeX = (mouseX - (screenX1 + 2)) / box.fontScale;
-        if (relativeX <= 0) return 0;
+    private int getCharIndexAtMouse(TextBoxState box, int screenX1, int screenY1, double mouseX, double mouseY) {
+        int maxW = Math.max(10, (int) ((box.x2 - box.x1 - 4) / box.fontScale));
+        java.util.List<TextBoxState.TextLine> lines = box.getWrappedLines(this.font, maxW);
 
-        int charPos = 0;
-        for (int i = 0; i < box.chars.size(); i++) {
-            String sub = box.getFormattedSubstring(0, i + 1);
-            int widthSoFar = this.font.width(sub);
-            if (widthSoFar > relativeX) {
-                String prevSub = box.getFormattedSubstring(0, i);
-                int prevWidth = this.font.width(prevSub);
-                if (relativeX - prevWidth < widthSoFar - relativeX) {
-                    charPos = i;
-                } else {
-                    charPos = i + 1;
-                }
-                break;
-            }
-            charPos = i + 1;
+        // 1. Определение строки по Y-координате мыши
+        double relativeY = (mouseY - (screenY1 + 2)) / box.fontScale;
+        int lineIdx = (int) (relativeY / 9.0);
+        lineIdx = Math.max(0, Math.min(lines.size() - 1, lineIdx));
+
+        TextBoxState.TextLine targetLine = lines.get(lineIdx);
+        double relativeX = (mouseX - (screenX1 + 2)) / box.fontScale;
+
+        if (relativeX <= 0) {
+            return targetLine.startCharIndex;
         }
-        return charPos;
+
+        // 2. Определение точного символа на этой строке по X-координате
+        int bestIndex = targetLine.startCharIndex;
+        double minDiff = Double.MAX_VALUE;
+
+        for (int i = targetLine.startCharIndex; i <= targetLine.endCharIndex; i++) {
+            String sub = box.getFormattedSubstring(targetLine.startCharIndex, i);
+            int widthSoFar = this.font.width(sub);
+            double diff = Math.abs(relativeX - widthSoFar);
+            if (diff < minDiff) {
+                minDiff = diff;
+                bestIndex = i;
+            }
+        }
+
+        return bestIndex;
     }
+
     boolean hasShift = Screen.hasShiftDown();
     boolean hasCtrl = Screen.hasControlDown();
 

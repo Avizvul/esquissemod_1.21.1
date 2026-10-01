@@ -23,7 +23,18 @@ import java.util.List;
 
 public class SketchbookPayloadHandler {
 
+    // Helper для создания 16 полных страниц (126x192)
+    private static List<SketchData> createDefaultPages() {
+        List<SketchData> list = new ArrayList<>(16);
+        SketchData emptyData = SketchData.fromArray(new int[126][192]);
+        for (int i = 0; i < 16; i++) {
+            list.add(emptyData);
+        }
+        return list;
+    }
+
     // --- 1. ОБРАБОТКА СОХРАНЕНИЯ СТРАНИЦЫ И ИЗНОСА ИНСТРУМЕНТОВ ---
+
     public void handleData(final SketchbookSavePayload payload, final IPayloadContext context) {
         context.enqueueWork(() -> {
             Player player = context.player();
@@ -34,6 +45,10 @@ public class SketchbookPayloadHandler {
 
             if (stack.is(ModItems.SKETCHBOOK.get())) {
                 List<SketchData> pages = new ArrayList<>(stack.getOrDefault(ModDataComponents.SKETCHBOOK_PAGES.get(), new ArrayList<>()));
+                if (pages.isEmpty()) {
+                    pages = createDefaultPages();
+                }
+
                 if (payload.pageIndex() >= 0 && payload.pageIndex() < pages.size()) {
                     pages.set(payload.pageIndex(), payload.sketchData());
                     stack.set(ModDataComponents.SKETCHBOOK_PAGES.get(), pages);
@@ -49,6 +64,7 @@ public class SketchbookPayloadHandler {
     }
 
     // --- 2. ОБРАБОТКА ОТРЫВА СТРАНИЦЫ ИЗ СКЕТЧБУКА ---
+
     public void handleTearPage(final TearPagePayload payload, final IPayloadContext context) {
         context.enqueueWork(() -> {
             Player player = context.player();
@@ -56,8 +72,13 @@ public class SketchbookPayloadHandler {
             if (!stack.is(ModItems.SKETCHBOOK.get())) {
                 stack = player.getOffhandItem();
             }
+
             if (stack.is(ModItems.SKETCHBOOK.get())) {
                 List<SketchData> pages = new ArrayList<>(stack.getOrDefault(ModDataComponents.SKETCHBOOK_PAGES.get(), new ArrayList<>()));
+                if (pages.isEmpty()) {
+                    pages = createDefaultPages();
+                }
+
                 if (payload.pageIndex() >= 0 && payload.pageIndex() < pages.size()) {
                     pages.remove(payload.pageIndex());
 
@@ -89,7 +110,8 @@ public class SketchbookPayloadHandler {
         });
     }
 
-    // --- 3. ОБРАБОТКА ПЕРЕКЛЮЧЕНИЯ ЦВЕТА (В РУКАХ ИЛИ В ПЕНАЛЕ) ---
+    // --- 3. ОБРАБОТКА ПЕРЕКЛЮЧЕНИЯ ЦВЕТА ---
+
     public void handleChangeColor(final ChangeColorPayload payload, final IPayloadContext context) {
         context.enqueueWork(() -> {
             Player player = context.player();
@@ -101,7 +123,6 @@ public class SketchbookPayloadHandler {
                     stack.set(ModDataComponents.ACTIVE_COLOR_INDEX.get(), payload.colorIndex());
                     return;
                 }
-
                 if (stack.is(ModItems.PENCIL_CASE.get()) && stack.has(DataComponents.CONTAINER)) {
                     ItemContainerContents contents = stack.get(DataComponents.CONTAINER);
                     if (contents != null) {
@@ -121,7 +142,8 @@ public class SketchbookPayloadHandler {
         });
     }
 
-    // --- 4. ОБРАБОТКА НАСТРОЕК КИСТИ (РАЗМЕР, ЖЕСТКОСТЬ, УГОЛ МАРКЕРА) ---
+    // --- 4. ОБРАБОТКА НАСТРОЕК КИСТИ ---
+
     public void handleToolSettings(final ToolSettingsPayload payload, final IPayloadContext context) {
         context.enqueueWork(() -> {
             Player player = context.player();
@@ -147,7 +169,6 @@ public class SketchbookPayloadHandler {
                     }
                     return;
                 }
-
                 if (stack.is(ModItems.PENCIL_CASE.get()) && stack.has(DataComponents.CONTAINER)) {
                     ItemContainerContents contents = stack.get(DataComponents.CONTAINER);
                     if (contents != null) {
@@ -172,16 +193,15 @@ public class SketchbookPayloadHandler {
     }
 
     // --- 5. ОБРАБОТКА ДЕЙСТВИЯ ПРИНТЕРА ---
-    public void handlePrinterAction(final PrinterActionPayload payload, final net.neoforged.neoforge.network.handling.IPayloadContext context) {
+
+    public void handlePrinterAction(final PrinterActionPayload payload, final IPayloadContext context) {
         context.enqueueWork(() -> {
             Player player = context.player();
             if (player.containerMenu instanceof PrinterMenu printerMenu) {
                 IItemHandler inv = printerMenu.getInventory();
-
                 ItemStack sourcePage = inv.getStackInSlot(0);
                 ItemStack paper = inv.getStackInSlot(1);
                 ItemStack outputSlot = inv.getStackInSlot(2);
-
                 ItemStack cyanDye = inv.getStackInSlot(3);
                 ItemStack magentaDye = inv.getStackInSlot(4);
                 ItemStack yellowDye = inv.getStackInSlot(5);
@@ -189,13 +209,11 @@ public class SketchbookPayloadHandler {
                 ItemStack catalyst = inv.getStackInSlot(7);
 
                 if (sourcePage.isEmpty() || !sourcePage.is(ModItems.SKETCHED_PAGE.get())) return;
-
                 SketchData sketchData = sourcePage.get(ModDataComponents.PAGE_DATA.get());
                 if (sketchData == null || sketchData.isEmpty()) return;
 
                 boolean isWarpEssence = !catalyst.isEmpty() && catalyst.is(ModItems.WARP_ESSENCE.get());
                 boolean isPaperCatalyst = !catalyst.isEmpty() && catalyst.is(Items.GLOWSTONE_DUST);
-
 
                 if (!isWarpEssence && !isPaperCatalyst) return;
 
@@ -204,27 +222,18 @@ public class SketchbookPayloadHandler {
                     if (!hasPaper || !outputSlot.isEmpty()) return;
                 }
 
-                // Проверяем наличие ВСЕХ четырёх красителей (CMYK)
-                boolean hasAllDyes = !cyanDye.isEmpty()
-                        && !magentaDye.isEmpty()
-                        && !yellowDye.isEmpty()
-                        && !blackDye.isEmpty();
-
+                boolean hasAllDyes = !cyanDye.isEmpty() && !magentaDye.isEmpty() && !yellowDye.isEmpty() && !blackDye.isEmpty();
                 if (!hasAllDyes) return;
 
-                // Списываем катализатор и ВСЕ красители по 1 шт.
-                catalyst.shrink(1);
                 cyanDye.shrink(1);
                 magentaDye.shrink(1);
                 yellowDye.shrink(1);
                 blackDye.shrink(1);
+                catalyst.shrink(1);
 
                 if (isWarpEssence) {
                     if (player instanceof ServerPlayer serverPlayer) {
-                        net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(
-                                serverPlayer,
-                                new ExportSketchPayload(sketchData)
-                        );
+                        net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(serverPlayer, new ExportSketchPayload(sketchData));
                     }
                     player.level().playSound(null, player.blockPosition(), SoundEvents.ENDERMAN_TELEPORT, SoundSource.BLOCKS, 0.6f, 1.2f);
                 } else {
@@ -232,69 +241,19 @@ public class SketchbookPayloadHandler {
                     ItemStack printedPage = new ItemStack(ModItems.SKETCHED_PAGE.get());
                     printedPage.set(ModDataComponents.PAGE_DATA.get(), sketchData);
                     inv.insertItem(2, printedPage, false);
-
                     player.level().playSound(null, player.blockPosition(), SoundEvents.BOOK_PAGE_TURN, SoundSource.BLOCKS, 1.0f, 1.0f);
                 }
             }
         });
-
-    }
-
-
-                // --- 6. ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ И ИЗНОС В ПЕНАЛЕ ---
-    private static List<SketchData> createEmptyPages() {
-        List<SketchData> pages = new ArrayList<>();
-        SketchData emptyData = SketchData.fromArray(new int[3][4]);
-        for (int i = 0; i < 16; i++) {
-            pages.add(emptyData);
-        }
-        return pages;
     }
 
     private static void damageTool(Player player, ServerLevel level, Item toolItem, int damageAmount) {
         if (damageAmount <= 0) return;
-
         for (ItemStack stack : player.getInventory().items) {
             if (stack.is(toolItem)) {
                 stack.hurtAndBreak(damageAmount, level, (ServerPlayer) player, p -> {});
                 return;
             }
-            if (damageInPencilCase(stack, toolItem, damageAmount, level, player)) return;
         }
-
-        for (ItemStack stack : player.getInventory().offhand) {
-            if (stack.is(toolItem)) {
-                stack.hurtAndBreak(damageAmount, level, (ServerPlayer) player, p -> {});
-                return;
-            }
-            if (damageInPencilCase(stack, toolItem, damageAmount, level, player)) return;
-        }
-    }
-
-    private static boolean damageInPencilCase(ItemStack containerStack, Item toolItem, int damageAmount, ServerLevel level, Player player) {
-        if (containerStack.is(ModItems.PENCIL_CASE.get()) && containerStack.has(DataComponents.CONTAINER)) {
-            ItemContainerContents contents = containerStack.get(DataComponents.CONTAINER);
-            if (contents != null) {
-                NonNullList<ItemStack> items = NonNullList.withSize(9, ItemStack.EMPTY);
-                contents.copyInto(items);
-                boolean foundAndDamaged = false;
-
-                for (int i = 0; i < items.size(); i++) {
-                    ItemStack innerStack = items.get(i);
-                    if (innerStack.is(toolItem)) {
-                        innerStack.hurtAndBreak(damageAmount, level, (ServerPlayer) player, p -> {});
-                        items.set(i, innerStack);
-                        foundAndDamaged = true;
-                        break;
-                    }
-                }
-
-                if (foundAndDamaged) {
-                    containerStack.set(DataComponents.CONTAINER, ItemContainerContents.fromItems(items));
-                    return true;
-                }
-            }
-        }
-        return false;
     }
 }

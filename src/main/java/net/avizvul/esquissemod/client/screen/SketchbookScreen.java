@@ -847,9 +847,31 @@ public class SketchbookScreen extends Screen {
                 guiGraphics.fill(screenX2, py, screenX2 + 1, Math.min(py + dashLen, screenY2), outlineColor);
             }
 
-            // 2. Угловой маркер изменения размера
-            int handleSize = 6;
-            guiGraphics.fill(screenX2 - handleSize / 2, screenY2 - handleSize / 2, screenX2 + handleSize / 2, screenY2 + handleSize / 2, 0xFFFFFFFF);
+            // 2. КРАСНЫЕ РУЧКИ УПРАВЛЕНИЯ (ПЕРЕМЕЩЕНИЕ И РАЗМЕР)
+            int redColor = 0xFFFF2222;
+            int darkRedBorder = 0xFF880000;
+
+            // А) Ручка перемещения (Красная плашка над рамкой)
+            int dragY1 = screenY1 - 6;
+            int dragY2 = screenY1;
+            guiGraphics.fill(screenX1, dragY1, screenX2, dragY2, redColor);
+            guiGraphics.fill(screenX1, dragY1, screenX2, dragY1 + 1, darkRedBorder);
+
+            // Декоративный маркер по центру плашки перемещения
+            int midX = (screenX1 + screenX2) / 2;
+            guiGraphics.fill(midX - 4, dragY1 + 2, midX - 2, dragY1 + 4, 0xFFFFFFFF);
+            guiGraphics.fill(midX, dragY1 + 2, midX + 2, dragY1 + 4, 0xFFFFFFFF);
+            guiGraphics.fill(midX + 4, dragY1 + 2, midX + 6, dragY1 + 4, 0xFFFFFFFF);
+
+            // Б) Ручка изменения размера (Красный квадрат 8x8px в правом нижнем углу)
+            int resX1 = screenX2 - 4;
+            int resY1 = screenY2 - 4;
+            int resX2 = screenX2 + 4;
+            int resY2 = screenY2 + 4;
+
+            guiGraphics.fill(resX1 - 1, resY1 - 1, resX2 + 1, resY2 + 1, darkRedBorder);
+            guiGraphics.fill(resX1, resY1, resX2, resY2, redColor);
+            guiGraphics.fill(resX1 + 2, resY1 + 2, resX2 - 2, resY2 - 2, 0xFFFFFFFF);
 
             // 3. Расчёт перенесённых строк
             int maxW = Math.max(10, (int) ((screenX2 - screenX1 - 4) / box.fontScale));
@@ -920,20 +942,17 @@ public class SketchbookScreen extends Screen {
 
             // --- ПАНЕЛЬ ФОРМАТИРОВАНИЯ ТЕКСТА ---
             if (this.isTextModeActive && this.activeTextBox != null) {
-                int screenX1 = canvasScreenLeft + (int) (this.activeTextBox.x1 * pCell);
-                int screenX2 = canvasScreenLeft + (int) (this.activeTextBox.x2 * pCell);
-                int screenY2 = renderY + (int) (this.activeTextBox.y2 * pCell);
-
+                // ВАЖНО: box, screenX1, screenX2, screenY1, screenY2 и hasColorPencil уже объявлены выше!
                 int toolbarX = screenX1;
                 int toolbarY = screenY2 + 6;
 
-                // 1. Верхняя панель (138px)
+                // 1. Верхняя панель (единая ширина 138px)
                 guiGraphics.fill(toolbarX, toolbarY, toolbarX + 138, toolbarY + 20, 0xE0000000);
 
-                boolean isBoldActive = this.activeTextBox.isStyleActive(TextBoxState.StyleType.BOLD);
-                boolean isItalicActive = this.activeTextBox.isStyleActive(TextBoxState.StyleType.ITALIC);
-                boolean isUnderlineActive = this.activeTextBox.isStyleActive(TextBoxState.StyleType.UNDERLINE);
-                boolean isStrikethroughActive = this.activeTextBox.isStyleActive(TextBoxState.StyleType.STRIKETHROUGH);
+                boolean isBoldActive = box.isStyleActive(TextBoxState.StyleType.BOLD);
+                boolean isItalicActive = box.isStyleActive(TextBoxState.StyleType.ITALIC);
+                boolean isUnderlineActive = box.isStyleActive(TextBoxState.StyleType.UNDERLINE);
+                boolean isStrikethroughActive = box.isStyleActive(TextBoxState.StyleType.STRIKETHROUGH);
 
                 // Стили B, I, U, S
                 guiGraphics.fill(toolbarX + 4, toolbarY + 3, toolbarX + 16, toolbarY + 17, isBoldActive ? 0xFF007ACC : 0x40FFFFFF);
@@ -956,7 +975,7 @@ public class SketchbookScreen extends Screen {
                 guiGraphics.drawString(this.font, "+", toolbarX + 80, toolbarY + 5, 0xFFFFFFFF, false);
 
                 // Прозрачность H / M / S
-                String opacityLabel = (this.activeTextBox.textOpacityLevel == 3) ? "H" : (this.activeTextBox.textOpacityLevel == 2) ? "M" : "S";
+                String opacityLabel = (box.textOpacityLevel == 3) ? "H" : (box.textOpacityLevel == 2) ? "M" : "S";
                 guiGraphics.fill(toolbarX + 90, toolbarY + 3, toolbarX + 102, toolbarY + 17, 0xFF007ACC);
                 guiGraphics.drawString(this.font, opacityLabel, toolbarX + 94, toolbarY + 5, 0xFFFFFFFF, false);
 
@@ -968,32 +987,29 @@ public class SketchbookScreen extends Screen {
                 guiGraphics.fill(toolbarX + 120, toolbarY + 3, toolbarX + 132, toolbarY + 17, 0xFFB22222);
                 guiGraphics.drawString(this.font, "x", toolbarX + 124, toolbarY + 5, 0xFFFFFFFF, false);
 
-                // 2. Нижняя панель цветов (используем уже объявленный hasColorPencil)
+                // 2. Нижняя панель цветов в один ряд (16 цветов)
                 if (hasColorPencil) {
                     int colorBarY = toolbarY + 20;
-                    guiGraphics.fill(toolbarX, colorBarY, toolbarX + 138, colorBarY + 18, 0xE0000000);
+                    guiGraphics.fill(toolbarX, colorBarY, toolbarX + 138, colorBarY + 12, 0xE0000000);
 
-                    for (int row = 0; row < 2; row++) {
-                        for (int col = 0; col < 8; col++) {
-                            int colorId = row * 8 + col;
-                            int colorX = toolbarX + 6 + col * 8;
-                            int colorY = colorBarY + 3 + row * 7;
+                    for (int colorId = 0; colorId < 16; colorId++) {
+                        int colorX = toolbarX + 6 + colorId * 8;
+                        int colorY = colorBarY + 3;
 
-                            int rgb = net.minecraft.world.item.DyeColor.byId(colorId).getTextureDiffuseColor() | 0xFF000000;
-                            boolean isSelected = (this.activeTextBox.pendingColorId == colorId);
+                        int rgb = net.minecraft.world.item.DyeColor.byId(colorId).getTextureDiffuseColor() | 0xFF000000;
+                        boolean isSelected = (box.pendingColorId == colorId);
 
-                            if (isSelected) {
-                                guiGraphics.fill(colorX - 1, colorY - 1, colorX + 6, colorY + 6, 0xFFFFFFFF);
-                            }
-                            guiGraphics.fill(colorX, colorY, colorX + 5, colorY + 5, rgb);
+                        if (isSelected) {
+                            guiGraphics.fill(colorX - 1, colorY - 1, colorX + 6, colorY + 6, 0xFFFFFFFF);
                         }
+                        guiGraphics.fill(colorX, colorY, colorX + 5, colorY + 5, rgb);
                     }
                 }
             }
         }
     }
 
-            //_________________________________________________________________________________
+    //_________________________________________________________________________________
 
     @Override
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
@@ -1511,29 +1527,54 @@ public class SketchbookScreen extends Screen {
 
             // 1. Клики по верхней панели
             if (mouseY >= toolbarY && mouseY <= toolbarY + 20) {
-                if (mouseX >= toolbarX + 4 && mouseX <= toolbarX + 16) { this.activeTextBox.applyFormattingCode("§l"); return true; }
-                if (mouseX >= toolbarX + 18 && mouseX <= toolbarX + 30) { this.activeTextBox.applyFormattingCode("§o"); return true; }
-                if (mouseX >= toolbarX + 32 && mouseX <= toolbarX + 44) { this.activeTextBox.applyFormattingCode("§n"); return true; }
-                if (mouseX >= toolbarX + 46 && mouseX <= toolbarX + 58) { this.activeTextBox.applyFormattingCode("§m"); return true; }
-                if (mouseX >= toolbarX + 62 && mouseX <= toolbarX + 74) { this.activeTextBox.fontScale = Math.max(0.5f, this.activeTextBox.fontScale - 0.25f); return true; }
-                if (mouseX >= toolbarX + 76 && mouseX <= toolbarX + 88) { this.activeTextBox.fontScale = Math.min(2.0f, this.activeTextBox.fontScale + 0.25f); return true; }
-                if (mouseX >= toolbarX + 90 && mouseX <= toolbarX + 102) { this.activeTextBox.cycleOpacity(); return true; }
-                if (mouseX >= toolbarX + 106 && mouseX <= toolbarX + 118) { commitTextToCanvas(); return true; }
-                if (mouseX >= toolbarX + 120 && mouseX <= toolbarX + 132) { this.isTextModeActive = false; this.activeTextBox = null; return true; }
+                if (mouseX >= toolbarX + 4 && mouseX <= toolbarX + 16) {
+                    this.activeTextBox.applyFormattingCode("§l");
+                    return true;
+                }
+                if (mouseX >= toolbarX + 18 && mouseX <= toolbarX + 30) {
+                    this.activeTextBox.applyFormattingCode("§o");
+                    return true;
+                }
+                if (mouseX >= toolbarX + 32 && mouseX <= toolbarX + 44) {
+                    this.activeTextBox.applyFormattingCode("§n");
+                    return true;
+                }
+                if (mouseX >= toolbarX + 46 && mouseX <= toolbarX + 58) {
+                    this.activeTextBox.applyFormattingCode("§m");
+                    return true;
+                }
+                if (mouseX >= toolbarX + 62 && mouseX <= toolbarX + 74) {
+                    this.activeTextBox.fontScale = Math.max(0.5f, this.activeTextBox.fontScale - 0.25f);
+                    return true;
+                }
+                if (mouseX >= toolbarX + 76 && mouseX <= toolbarX + 88) {
+                    this.activeTextBox.fontScale = Math.min(2.0f, this.activeTextBox.fontScale + 0.25f);
+                    return true;
+                }
+                if (mouseX >= toolbarX + 90 && mouseX <= toolbarX + 102) {
+                    this.activeTextBox.cycleOpacity();
+                    return true;
+                }
+                if (mouseX >= toolbarX + 106 && mouseX <= toolbarX + 118) {
+                    commitTextToCanvas();
+                    return true;
+                }
+                if (mouseX >= toolbarX + 120 && mouseX <= toolbarX + 132) {
+                    this.isTextModeActive = false;
+                    this.activeTextBox = null;
+                    return true;
+                }
             }
 
-            // 2. Клики по палитре цветов (используем существующую переменную hasColorPencil)
-            if (hasColorPencil && mouseY >= colorBarY && mouseY <= colorBarY + 18) {
-                for (int row = 0; row < 2; row++) {
-                    for (int col = 0; col < 8; col++) {
-                        int colorId = row * 8 + col;
-                        int colorX = toolbarX + 6 + col * 8;
-                        int colorY = colorBarY + 3 + row * 7;
+            // 2. Клики по палитре цветов
+            if (hasColorPencil && mouseY >= colorBarY && mouseY <= colorBarY + 12) {
+                for (int colorId = 0; colorId < 16; colorId++) {
+                    int colorX = toolbarX + 6 + colorId * 8;
+                    int colorY = colorBarY + 3;
 
-                        if (mouseX >= colorX - 1 && mouseX <= colorX + 6 && mouseY >= colorY - 1 && mouseY <= colorY + 6) {
-                            this.activeTextBox.applyColor(colorId);
-                            return true;
-                        }
+                    if (mouseX >= colorX - 1 && mouseX <= colorX + 6 && mouseY >= colorY - 1 && mouseY <= colorY + 6) {
+                        this.activeTextBox.applyColor(colorId);
+                        return true;
                     }
                 }
             }
@@ -1541,11 +1582,13 @@ public class SketchbookScreen extends Screen {
             // 3. Изменение размера, перетаскивание и выделение текста мышью
             int handleSize = 8;
             if (button == 0) {
+                // Клик по красной ручке изменения размера (правый нижний угол)
                 if (mouseX >= screenX2 - handleSize && mouseX <= screenX2 + handleSize && mouseY >= screenY2 - handleSize && mouseY <= screenY2 + handleSize) {
                     this.isTextBoxResizing = true;
                     return true;
                 }
 
+                // Клик по красной ручке перемещения (верхняя плашка)
                 if (mouseX >= screenX1 && mouseX <= screenX2 && mouseY >= screenY1 - 6 && mouseY <= screenY1 + 2) {
                     this.isTextBoxDragging = true;
                     this.textBoxDragStartX = mouseX - screenX1;
@@ -1553,17 +1596,8 @@ public class SketchbookScreen extends Screen {
                     return true;
                 }
 
-                if (mouseX >= screenX1 && mouseX <= screenX2 && mouseY >= screenY1 && mouseY <= screenY2) {
-                    int charIndex = getCharIndexAtMouse(this.activeTextBox, screenX1, screenY1, screenX2, mouseX, mouseY);
-                    boolean hasShift = Screen.hasShiftDown();
-                    this.activeTextBox.setCaret(charIndex, hasShift);
-                    this.isTextSelectingWithMouse = true;
-                    return true;
-                }
             }
         }
-
-
 
         // 3. Создание новой текстовой зоны при клике по холсту
         if (this.activeTool == Tool.TEXT && button == 0) {
@@ -2446,19 +2480,20 @@ public class SketchbookScreen extends Screen {
 
 
     private int getActiveTextColorArgb() {
-        int hardness = getHardness();
-        int alpha = (hardness == 1) ? 64 : (hardness == 2 ? 128 : 255);
-        if (this.activeTool == Tool.COLOR_MARKER) {
-            alpha = (hardness == 1) ? 76 : (hardness == 2 ? 153 : 255);
+        int alpha = 255;
+        if (this.activeTextBox != null) {
+            alpha = switch (this.activeTextBox.textOpacityLevel) {
+                case 1 -> 84;  // 33%
+                case 2 -> 168; // 66%
+                default -> 255; // 100%
+            };
         }
 
-        int rgb = 0x000000; // Простой карандаш = чёрный цвет
-
-        // Цветной карандаш или маркер = цвет из палитры
+        int rgb = 0x000000;
         if (this.activeTool == Tool.COLOR_PENCIL || this.activeTool == Tool.COLOR_MARKER) {
-            ItemStack activeStack = (this.activeTool == Tool.COLOR_MARKER) ? getColorMarkerStack() : getColorPencilStack();
+            net.minecraft.world.item.ItemStack activeStack = (this.activeTool == Tool.COLOR_MARKER) ? getColorMarkerStack() : getColorPencilStack();
             if (!activeStack.isEmpty()) {
-                List<Integer> colors = activeStack.getOrDefault(ModDataComponents.STORED_COLORS.get(), new ArrayList<>());
+                java.util.List<Integer> colors = activeStack.getOrDefault(ModDataComponents.STORED_COLORS.get(), new java.util.ArrayList<>());
                 if (!colors.isEmpty()) {
                     int activeIndex = activeStack.getOrDefault(ModDataComponents.ACTIVE_COLOR_INDEX.get(), 0);
                     int colorId = colors.get(Math.abs(activeIndex) % colors.size());
@@ -2469,8 +2504,6 @@ public class SketchbookScreen extends Screen {
 
         return (alpha << 24) | (rgb & 0xFFFFFF);
     }
-
-
     @Override
     public boolean charTyped(char codePoint, int modifiers) {
         if (this.isTextModeActive && this.activeTextBox != null) {
@@ -2491,13 +2524,20 @@ public class SketchbookScreen extends Screen {
         String formattedString = box.toFormattedString();
 
         if (!formattedString.isEmpty()) {
-            int textColor = getActiveTextColorArgb();
+            int baseRgb = getActiveTextColorArgb() & 0xFFFFFF;
+            int alpha = switch (box.textOpacityLevel) {
+                case 1 -> 84;  // 33% (Soft)
+                case 2 -> 168; // 66% (Medium)
+                default -> 255; // 100% (High)
+            };
+            int finalArgb = (alpha << 24) | baseRgb;
+
             TextElement element = new TextElement(
                     formattedString,
                     box.x1,
                     box.y1,
                     box.fontScale,
-                    textColor
+                    finalArgb
             );
             this.textElements.add(element);
         }

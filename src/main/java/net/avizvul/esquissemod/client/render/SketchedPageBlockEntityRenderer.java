@@ -6,14 +6,22 @@ import net.avizvul.esquissemod.EsquisseMod;
 import net.avizvul.esquissemod.block.SketchedPageBlock;
 import net.avizvul.esquissemod.block.entity.SketchedPageBlockEntity;
 import net.avizvul.esquissemod.component.SketchData;
+import net.avizvul.esquissemod.component.TextElement;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
 import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider;
 import net.minecraft.core.Direction;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.util.FormattedCharSequence;
+
+import java.util.List;
 
 public class SketchedPageBlockEntityRenderer implements BlockEntityRenderer<SketchedPageBlockEntity> {
+
     private static final ResourceLocation PAGE_TEX = ResourceLocation.fromNamespaceAndPath(EsquisseMod.MOD_ID, "textures/gui/sketched_page_gui.png");
 
     public SketchedPageBlockEntityRenderer(BlockEntityRendererProvider.Context context) {}
@@ -26,81 +34,90 @@ public class SketchedPageBlockEntityRenderer implements BlockEntityRenderer<Sket
         Direction facing = blockEntity.getBlockState().getValue(SketchedPageBlock.FACING);
 
         poseStack.pushPose();
-
-        // 1. Идем в самый центр блока
         poseStack.translate(0.5f, 0.5f, 0.5f);
 
-        // 2. Строго задаем поворот для каждой из 6 граней.
-        // Теперь локальные оси всегда будут: +X = Вправо, +Y = Вниз, -Z = Лицо (к игроку)
         switch (facing) {
-            case NORTH:
-                poseStack.mulPose(com.mojang.math.Axis.ZP.rotationDegrees(180f));
-                break;
-            case SOUTH:
-                poseStack.mulPose(com.mojang.math.Axis.XP.rotationDegrees(180f));
-                break;
-            case EAST:
+            case NORTH -> poseStack.mulPose(com.mojang.math.Axis.ZP.rotationDegrees(180f));
+            case SOUTH -> poseStack.mulPose(com.mojang.math.Axis.XP.rotationDegrees(180f));
+            case EAST  -> {
                 poseStack.mulPose(com.mojang.math.Axis.YP.rotationDegrees(90f));
                 poseStack.mulPose(com.mojang.math.Axis.XP.rotationDegrees(180f));
-                break;
-            case WEST:
+            }
+            case WEST  -> {
                 poseStack.mulPose(com.mojang.math.Axis.YP.rotationDegrees(-90f));
                 poseStack.mulPose(com.mojang.math.Axis.XP.rotationDegrees(180f));
-                break;
-            case UP: // Пол
-                poseStack.mulPose(com.mojang.math.Axis.XP.rotationDegrees(90f));
-                break;
-            case DOWN: // Потолок
+            }
+            case UP    -> poseStack.mulPose(com.mojang.math.Axis.XP.rotationDegrees(90f));
+            case DOWN  -> {
                 poseStack.mulPose(com.mojang.math.Axis.XP.rotationDegrees(-90f));
                 poseStack.mulPose(com.mojang.math.Axis.ZP.rotationDegrees(180f));
-                break;
+            }
         }
 
-        // 3. Сдвигаемся к нужной грани.
-        // Локальная ось +Z теперь смотрит ВНУТРЬ блока (в стену/пол). Сдвигаем на 0.4375, чтобы прижать бумагу к внутренней поверхности хитбокса.
         poseStack.translate(0.0f, 0.0f, 0.495f);
-
-        // 4. Вращение от кликов игрока (ПКМ по блоку)
         poseStack.mulPose(com.mojang.math.Axis.ZP.rotationDegrees(blockEntity.getRotation() * 90f));
 
-        // 5. Масштаб и центрирование рисунка
         float scale = 0.8f / 192f;
         poseStack.scale(scale, scale, scale);
         poseStack.translate(-63.0f, -96.0f, 0.0f);
 
         PoseStack.Pose pose = poseStack.last();
 
-        // --- ФОН (Бумага) ---
+        // 1. Бумага
         VertexConsumer bgConsumer = bufferSource.getBuffer(RenderType.entityCutout(PAGE_TEX));
-        // Фон на Z = 0.0f
         drawQuad(pose, bgConsumer, 0, 0, 0.0f, 126, 192, 0.0f, 0.0f, 1.0f, 1.0f, 0xFFFFFFFF, packedLight);
 
-        // --- ПИКСЕЛИ (Рисунок) ---
-        net.minecraft.resources.ResourceLocation sketchTexture = net.avizvul.esquissemod.client.SketchTextureCache.getOrCreateTexture(data);
+        // 2. Пиксельный рисунок
+        ResourceLocation sketchTexture = net.avizvul.esquissemod.client.SketchTextureCache.getOrCreateTexture(data);
         if (sketchTexture != null) {
             VertexConsumer pixelConsumer = bufferSource.getBuffer(RenderType.entityTranslucentCull(sketchTexture));
-            // ИСПРАВЛЕНИЕ Z-FIGHTING: Рисуем пиксели с Z = -1.0f (выдвигаем на 1 локальный пиксель вперед от бумаги)
             drawQuad(pose, pixelConsumer, 0, 0, -1.0f, 126, 192, 0.0f, 0.0f, 1.0f, 1.0f, 0xFFFFFFFF, packedLight);
+        }
+
+        // 3. Векторный текст на 3D блоке
+        List<TextElement> texts = data.getTextElements();
+        if (texts != null && !texts.isEmpty()) {
+            Font font = Minecraft.getInstance().font;
+            for (TextElement elem : texts) {
+                poseStack.pushPose();
+                poseStack.translate(elem.x() + 2, elem.y() + 2, -1.5f);
+                poseStack.scale(elem.scale(), elem.scale(), 1.0f);
+
+                Component comp = Component.literal(elem.text());
+                int maxW = Math.max(10, (int) ((125 - elem.x()) / elem.scale()));
+                List<FormattedCharSequence> lines = font.split(comp, maxW);
+
+                for (int l = 0; l < lines.size(); l++) {
+                    font.drawInBatch(
+                            lines.get(l),
+                            0,
+                            l * 9,
+                            elem.color(),
+                            false,
+                            poseStack.last().pose(),
+                            bufferSource,
+                            Font.DisplayMode.NORMAL,
+                            0,
+                            packedLight
+                    );
+                }
+                poseStack.popPose();
+            }
         }
 
         poseStack.popPose();
     }
 
-    private void drawQuad(
-            PoseStack.Pose pose, VertexConsumer consumer,
-            float x, float y, float z, float width, float height, float u0, float v0, float u1, float v1,
-            int argb, int light) {
-
+    private void drawQuad(PoseStack.Pose pose, VertexConsumer consumer, float x, float y, float z, float width, float height, float u0, float v0, float u1, float v1, int argb, int light) {
         int r = (argb >> 16) & 0xFF;
         int g = (argb >> 8) & 0xFF;
         int b = argb & 0xFF;
         int a = (argb >> 24) & 0xFF;
         int overlay = net.minecraft.client.renderer.texture.OverlayTexture.NO_OVERLAY;
 
-        // ИСПРАВЛЕНИЕ: Меняем нормаль с 1.0f на -1.0f, чтобы свет падал с лица, а не изнутри блока
-        consumer.addVertex(pose, x, y, z).setColor(r, g, b, a).setUv(u0, v0).setOverlay(overlay).setLight(light).setNormal(pose, 0.0f, 0.0f, -1.0f);
         consumer.addVertex(pose, x, y + height, z).setColor(r, g, b, a).setUv(u0, v1).setOverlay(overlay).setLight(light).setNormal(pose, 0.0f, 0.0f, -1.0f);
         consumer.addVertex(pose, x + width, y + height, z).setColor(r, g, b, a).setUv(u1, v1).setOverlay(overlay).setLight(light).setNormal(pose, 0.0f, 0.0f, -1.0f);
         consumer.addVertex(pose, x + width, y, z).setColor(r, g, b, a).setUv(u1, v0).setOverlay(overlay).setLight(light).setNormal(pose, 0.0f, 0.0f, -1.0f);
+        consumer.addVertex(pose, x, y, z).setColor(r, g, b, a).setUv(u0, v0).setOverlay(overlay).setLight(light).setNormal(pose, 0.0f, 0.0f, -1.0f);
     }
 }

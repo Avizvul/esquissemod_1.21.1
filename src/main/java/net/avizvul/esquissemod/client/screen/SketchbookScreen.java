@@ -739,6 +739,24 @@ public class SketchbookScreen extends Screen {
 
         boolean hasRuler = hasTool(net.avizvul.esquissemod.item.ModItems.RULER.get());
 
+        // --- КНОПКА РЕЖИМА ТЕКСТА (Т) ---
+        if (hasPencil || hasColorPencil) {
+            int textBtnX = hasPencil ? toolCoords.pencilX() : toolCoords.colorPencilX();
+            int textBtnY = peekY - 38; // Располагаем над карандашом
+            int textBtnWidth = 14;
+            int textBtnHeight = 12;
+
+            boolean isTextSelected = (this.activeTool == Tool.TEXT);
+            boolean isBtnHovered = mouseX >= textBtnX && mouseX < textBtnX + textBtnWidth && mouseY >= textBtnY && mouseY < textBtnY + textBtnHeight;
+
+            int bgColor = isTextSelected ? 0xFF007ACC : (isBtnHovered ? 0xFF555555 : 0xFF333333);
+            guiGraphics.fill(textBtnX, textBtnY, textBtnX + textBtnWidth, textBtnY + textBtnHeight, bgColor);
+            guiGraphics.fill(textBtnX - 1, textBtnY - 1, textBtnX + textBtnWidth + 1, textBtnY + textBtnHeight + 1, 0xFF555555);
+
+            // Рисуем буква "T" по центру кнопки
+            guiGraphics.drawString(this.font, "T", textBtnX + 4, textBtnY + 2, isTextSelected ? 0xFFFFFF00 : 0xFFFFFFFF, false);
+        }
+
         if (!hasRuler && this.isRulerActive) {
             this.isRulerActive = false;
             this.isQuickRulerMode = false;
@@ -1251,6 +1269,61 @@ public class SketchbookScreen extends Screen {
             }
         }
 
+        // Клик по кнопке (Т) над инструментами
+        if (hasPencil || hasColorPencil) {
+            int textBtnX = hasPencil ? toolCoords.pencilX() : toolCoords.colorPencilX();
+            int textBtnY = peekY - 38;
+            if (mouseX >= textBtnX && mouseX < textBtnX + 14 && mouseY >= textBtnY && mouseY < textBtnY + 12) {
+                this.activeTool = Tool.TEXT;
+                return true;
+            }
+        }
+
+        // Клики по кнопкам панели форматирования текста
+        if (this.isTextModeActive && this.activeTextBox != null) {
+            TextBoxState box = this.activeTextBox;
+            double pCell = (double) this.scale / this.resolutionMultiplier;
+            int screenX1 = canvasScreenLeft + (int) (box.x1 * pCell);
+            int screenY2 = renderY + (int) (box.y2 * pCell);
+            int toolbarX = screenX1;
+            int toolbarY = screenY2 + 6;
+
+            if (mouseY >= toolbarY && mouseY <= toolbarY + 20) {
+                // [B]
+                if (mouseX >= toolbarX + 4 && mouseX <= toolbarX + 16) { box.isBold = !box.isBold; return true; }
+                // [I]
+                if (mouseX >= toolbarX + 18 && mouseX <= toolbarX + 30) { box.isItalic = !box.isItalic; return true; }
+                // [U]
+                if (mouseX >= toolbarX + 32 && mouseX <= toolbarX + 44) { box.isUnderline = !box.isUnderline; return true; }
+                // [S]
+                if (mouseX >= toolbarX + 46 && mouseX <= toolbarX + 58) { box.isStrikethrough = !box.isStrikethrough; return true; }
+                // [A-]
+                if (mouseX >= toolbarX + 66 && mouseX <= toolbarX + 78) { box.fontScale = Math.max(0.5f, box.fontScale - 0.25f); return true; }
+                // [A+]
+                if (mouseX >= toolbarX + 82 && mouseX <= toolbarX + 94) { box.fontScale = Math.min(2.0f, box.fontScale + 0.25f); return true; }
+                // [✓] Подтверждение
+                if (mouseX >= toolbarX + 104 && mouseX <= toolbarX + 116) { commitTextToCanvas(); return true; }
+                // [✗] Отмена
+                if (mouseX >= toolbarX + 120 && mouseX <= toolbarX + 132) { this.isTextModeActive = false; this.activeTextBox = null; return true; }
+            }
+        }
+
+        // Создание новой зоны текста при клике на холст
+        if (this.activeTool == Tool.TEXT && button == 0) {
+            double physicalCellSize = (double) this.scale / this.resolutionMultiplier;
+            int canvasX = (int) ((lMouseX[0] - canvasScreenLeft) / physicalCellSize);
+            int canvasY = (int) ((lMouseY[1] - renderY) / physicalCellSize);
+
+            if (canvasX >= 0 && canvasX < 126 && canvasY >= 0 && canvasY < 192) {
+                if (this.isTextModeActive && this.activeTextBox != null) {
+                    commitTextToCanvas(); // Запекаем предыдущий текст при клике в новое место
+                }
+                this.activeTextBox = new TextBoxState(canvasX, canvasY);
+                this.isTextModeActive = true;
+                return true;
+            }
+        }
+
         if (button == 0) {
             int baseY = this.height - (scaledBtnHeight / 2);
             int pencilY = (this.activeTool == Tool.PENCIL) ? peekY : baseY;
@@ -1671,6 +1744,11 @@ public class SketchbookScreen extends Screen {
         }
         else if (keyCode == GLFW.GLFW_KEY_V && hasColorMarker) {
             this.activeTool = Tool.COLOR_MARKER;
+            return true;
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_T && (hasPencil || hasColorPencil)) {
+            this.activeTool = Tool.TEXT;
             return true;
         }
 

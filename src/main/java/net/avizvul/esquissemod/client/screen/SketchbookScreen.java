@@ -1234,26 +1234,23 @@ public class SketchbookScreen extends Screen {
             int toolbarX = screenX1;
             int toolbarY = screenY2 + 6;
 
-            // Клики по кнопкам плавающей панели форматирования
             if (mouseY >= toolbarY && mouseY <= toolbarY + 20) {
-                if (mouseX >= toolbarX + 4 && mouseX <= toolbarX + 16) { box.applyFormattingCode("§l"); return true; } // B
-                if (mouseX >= toolbarX + 18 && mouseX <= toolbarX + 30) { box.applyFormattingCode("§o"); return true; } // I
-                if (mouseX >= toolbarX + 32 && mouseX <= toolbarX + 44) { box.applyFormattingCode("§n"); return true; } // U
-                if (mouseX >= toolbarX + 46 && mouseX <= toolbarX + 58) { box.applyFormattingCode("§m"); return true; } // S
-                if (mouseX >= toolbarX + 66 && mouseX <= toolbarX + 78) { box.fontScale = Math.max(0.5f, box.fontScale - 0.25f); return true; } // A-
-                if (mouseX >= toolbarX + 82 && mouseX <= toolbarX + 94) { box.fontScale = Math.min(2.0f, box.fontScale + 0.25f); return true; } // A+
-                if (mouseX >= toolbarX + 104 && mouseX <= toolbarX + 116) { commitTextToCanvas(); return true; } // ✓
-                if (mouseX >= toolbarX + 120 && mouseX <= toolbarX + 132) { this.isTextModeActive = false; this.activeTextBox = null; return true; } // ✗
+                if (mouseX >= toolbarX + 4 && mouseX <= toolbarX + 16) { box.applyFormattingCode("§l"); return true; }
+                if (mouseX >= toolbarX + 18 && mouseX <= toolbarX + 30) { box.applyFormattingCode("§o"); return true; }
+                if (mouseX >= toolbarX + 32 && mouseX <= toolbarX + 44) { box.applyFormattingCode("§n"); return true; }
+                if (mouseX >= toolbarX + 46 && mouseX <= toolbarX + 58) { box.applyFormattingCode("§m"); return true; }
+                if (mouseX >= toolbarX + 66 && mouseX <= toolbarX + 78) { box.fontScale = Math.max(0.5f, box.fontScale - 0.25f); return true; }
+                if (mouseX >= toolbarX + 82 && mouseX <= toolbarX + 94) { box.fontScale = Math.min(2.0f, box.fontScale + 0.25f); return true; }
+                if (mouseX >= toolbarX + 104 && mouseX <= toolbarX + 116) { commitTextToCanvas(); return true; }
+                if (mouseX >= toolbarX + 120 && mouseX <= toolbarX + 132) { this.isTextModeActive = false; this.activeTextBox = null; return true; }
             }
 
             if (button == 0) {
-                // Угловой маркер — изменение размера зажатием
                 if (mouseX >= screenX2 - handleSize && mouseX <= screenX2 + handleSize && mouseY >= screenY2 - handleSize && mouseY <= screenY2 + handleSize) {
                     this.isTextBoxResizing = true;
                     return true;
                 }
 
-                // Внутри рамки — перемещение зажатием и позиционирование каретки
                 if (mouseX >= screenX1 && mouseX <= screenX2 && mouseY >= screenY1 && mouseY <= screenY2) {
                     this.isTextBoxDragging = true;
                     this.textBoxDragStartX = mouseX - screenX1;
@@ -1283,7 +1280,7 @@ public class SketchbookScreen extends Screen {
             }
         }
 
-        // 4. Левый клик (ЛКМ)
+        // 4. Левый клик (ЛКМ) — Выбор всех инструментов и утилит
         if (button == 0) {
             int baseY = this.height - (scaledBtnHeight / 2);
             int pencilY = (this.activeTool == Tool.PENCIL) ? peekY : baseY;
@@ -1293,7 +1290,7 @@ public class SketchbookScreen extends Screen {
             int smudgeY = (this.activeTool == Tool.SMUDGE) ? peekY : baseY;
             int kneadedY = (this.activeTool == Tool.KNEADED_ERASER) ? peekY : baseY;
 
-            // Выбор инструментов
+            // Выбор рисовочных инструментов
             if (hasPencil && mouseX >= pencilX && mouseX < pencilX + scaledBtnWidth && mouseY >= pencilY && mouseY < pencilY + scaledBtnHeight) {
                 this.activeTool = Tool.PENCIL; return true;
             }
@@ -1313,7 +1310,21 @@ public class SketchbookScreen extends Screen {
                 this.activeTool = Tool.KNEADED_ERASER; return true;
             }
 
-            // Клики по индикаторам размеров и жесткости
+            // КЛИКИ ПО УТИЛИТАМ (Линейка, Лупа, Циркуль) ЛКМ
+            if (hasRuler && mouseX >= rulerX && mouseX < rulerX + scaledBtnWidth && mouseY >= peekY && mouseY < peekY + scaledBtnHeight) {
+                this.isRulerActive = !this.isRulerActive;
+                return true;
+            }
+            if (hasMagGlass && mouseX >= magGlassX && mouseX < magGlassX + scaledBtnWidth && mouseY >= peekY && mouseY < peekY + scaledBtnHeight) {
+                this.isMagnifierLocked = !this.isMagnifierLocked;
+                return true;
+            }
+            if (hasCompass && mouseX >= compassX && mouseX < compassX + scaledBtnWidth && mouseY >= peekY && mouseY < peekY + scaledBtnHeight) {
+                this.compassState = (this.compassState == CompassState.INACTIVE) ? CompassState.FOLDED : CompassState.INACTIVE;
+                return true;
+            }
+
+            // Индикаторы размера
             Tool effectiveTool = (this.activeTool == Tool.TEXT) ? this.previousDrawingTool : this.activeTool;
             int activeX = switch (effectiveTool) {
                 case PENCIL -> pencilX;
@@ -1354,8 +1365,48 @@ public class SketchbookScreen extends Screen {
             }
         }
 
+        // 5. Правый клик (ПКМ) — Смена твёрдости по кругу и быстрый сброс утилит
+        if (button == 1) {
+            // Проверка клика ПКМ по инструментам рисования
+            boolean clickedPencil = hasPencil && mouseX >= pencilX && mouseX < pencilX + scaledBtnWidth && mouseY >= peekY && mouseY < peekY + scaledBtnHeight;
+            boolean clickedColorPencil = hasColorPencil && mouseX >= colorPencilX && mouseX < colorPencilX + scaledBtnWidth && mouseY >= peekY && mouseY < peekY + scaledBtnHeight;
+            boolean clickedColorMarker = hasColorMarker && mouseX >= colorMarkerX && mouseX < colorMarkerX + scaledBtnWidth && mouseY >= peekY && mouseY < peekY + scaledBtnHeight;
+            boolean clickedEraser = hasEraser && mouseX >= eraserX && mouseX < eraserX + scaledBtnWidth && mouseY >= peekY && mouseY < peekY + scaledBtnHeight;
+            boolean clickedSmudge = hasSmudge && mouseX >= smudgeX && mouseX < smudgeX + scaledBtnWidth && mouseY >= peekY && mouseY < peekY + scaledBtnHeight;
+            boolean clickedKneaded = hasKneaded && mouseX >= kneadedX && mouseX < kneadedX + scaledBtnWidth && mouseY >= peekY && mouseY < peekY + scaledBtnHeight;
+
+            if (clickedPencil || clickedColorPencil || clickedColorMarker || clickedEraser || clickedSmudge || clickedKneaded) {
+                if (clickedPencil) this.activeTool = Tool.PENCIL;
+                else if (clickedColorPencil) this.activeTool = Tool.COLOR_PENCIL;
+                else if (clickedColorMarker) this.activeTool = Tool.COLOR_MARKER;
+                else if (clickedEraser) this.activeTool = Tool.ERASER;
+                else if (clickedSmudge) this.activeTool = Tool.SMUDGE;
+                else if (clickedKneaded) this.activeTool = Tool.KNEADED_ERASER;
+
+                // Циклическое переключение твёрдости 1 -> 2 -> 3 -> 1
+                int nextHardness = (getHardness() % 3) + 1;
+                setToolSettings(getBrushSize(), nextHardness, getMarkerRotation());
+                return true;
+            }
+
+            // Деактивация утилит ПКМ
+            if (hasRuler && mouseX >= rulerX && mouseX < rulerX + scaledBtnWidth && mouseY >= peekY && mouseY < peekY + scaledBtnHeight) {
+                this.isRulerActive = false;
+                return true;
+            }
+            if (hasMagGlass && mouseX >= magGlassX && mouseX < magGlassX + scaledBtnWidth && mouseY >= peekY && mouseY < peekY + scaledBtnHeight) {
+                this.isMagnifierLocked = false;
+                return true;
+            }
+            if (hasCompass && mouseX >= compassX && mouseX < compassX + scaledBtnWidth && mouseY >= peekY && mouseY < peekY + scaledBtnHeight) {
+                this.compassState = CompassState.INACTIVE;
+                return true;
+            }
+        }
+
         return super.mouseClicked(mouseX, mouseY, button);
     }
+
 
     @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {

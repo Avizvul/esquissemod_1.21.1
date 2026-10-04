@@ -37,6 +37,7 @@ public class ClientRenderUtils {
                 int elemY = startY + (int) ((elem.y() + 2) * scaleY);
 
                 Component comp = Component.literal(elem.text());
+                // Ширина расчитывается от X до края листа (125)
                 int maxW = Math.max(10, (int) ((125 - elem.x() - 2) * scaleX / elem.scale()));
                 List<FormattedCharSequence> lines = font.split(comp, maxW);
                 int lineH = (int) (9 * elem.scale() * scaleY);

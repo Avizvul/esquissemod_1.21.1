@@ -748,17 +748,16 @@ public class SketchbookScreen extends Screen {
             TextBoxState box = this.activeTextBox;
             double pCell = (double) this.scale / this.resolutionMultiplier;
 
-            // Точные экранные координаты текстовой рамки
             int screenX1 = canvasScreenLeft + (int) (box.x1 * pCell);
             int screenY1 = renderY + (int) (box.y1 * pCell);
             int screenX2 = canvasScreenLeft + (int) (box.x2 * pCell);
             int screenY2 = renderY + (int) (box.y2 * pCell);
 
-            // 1. Ограничиваем отрисовку символов и каретки СТРОГО ВНУТРИ ТЕКСТОВОЙ РАМКИ
-            int clipX1 = Math.max(0, Math.min(screenX1, screenX2));
-            int clipY1 = Math.max(0, Math.min(screenY1, screenY2));
-            int clipX2 = Math.max(clipX1 + 1, Math.max(screenX1, screenX2));
-            int clipY2 = Math.max(clipY1 + 1, Math.max(screenY1, screenY2));
+            // 1. Ограничиваем отрисовку символов и каретки ПО ГРАНИЦАМ ХОЛСТА БУМАГИ
+            int clipX1 = canvasScreenLeft;
+            int clipY1 = renderY;
+            int clipX2 = canvasScreenLeft + (this.canvasWidth * this.scale);
+            int clipY2 = renderY + (this.canvasHeight * this.scale);
 
             guiGraphics.enableScissor(clipX1, clipY1, clipX2, clipY2);
 
@@ -767,6 +766,7 @@ public class SketchbookScreen extends Screen {
             int textColor = getActiveTextColorArgb();
             int rotDegrees = (box.rotation % 4) * 90;
 
+            // Перенос зависит ТОЛЬКО от ширины самого текстового поля (screenX2 - screenX1)
             int maxW = Math.max(10, (int) ((screenX2 - screenX1 - 4) / renderScale));
             java.util.List<TextBoxState.TextLine> lines = box.getWrappedLines(this.font, maxW);
 
@@ -809,7 +809,7 @@ public class SketchbookScreen extends Screen {
                 guiGraphics.pose().popPose();
             }
 
-            // Мигающая каретка
+            // Каретка
             int caretLineIdx = 0;
             TextBoxState.TextLine caretLine = lines.get(0);
             for (int l = 0; l < lines.size(); l++) {
@@ -1447,7 +1447,7 @@ public class SketchbookScreen extends Screen {
                 if (mouseX >= toolbarX + 132 && mouseX <= toolbarX + 144) { this.isTextModeActive = false; this.activeTextBox = null; return true; }
             }
 
-            // 2. Клики по цветам палитры (ТОЛЬКО ЕСЛИ АКТИВЕН ЦВЕТНОЙ ИНСТРУМЕНТ)
+            // 2. Клики по цветам палитры
             Tool currentDrawingTool = (this.activeTool == Tool.TEXT) ? this.previousDrawingTool : this.activeTool;
             boolean isColorTool = (currentDrawingTool == Tool.COLOR_PENCIL || currentDrawingTool == Tool.COLOR_MARKER);
 
@@ -1465,24 +1465,20 @@ public class SketchbookScreen extends Screen {
             // 3. Ручки управления рамкой
             if (button == 0) {
                 int handleSize = 8;
-                // Изменение размера
                 if (mouseX >= screenX2 - handleSize && mouseX <= screenX2 + handleSize && mouseY >= screenY2 - handleSize && mouseY <= screenY2 + handleSize) {
                     this.isTextBoxResizing = true;
                     return true;
                 }
-                // Ручка переключения ориентации [↕]
                 if (mouseX >= screenX2 - 12 && mouseX <= screenX2 + 4 && mouseY >= screenY1 - 6 && mouseY <= screenY1 + 2) {
                     box.toggleOrientation();
                     return true;
                 }
-                // Перемещение за верхнюю плашку
                 if (mouseX >= screenX1 && mouseX <= screenX2 - 12 && mouseY >= screenY1 - 6 && mouseY <= screenY1 + 2) {
                     this.isTextBoxDragging = true;
                     this.textBoxDragStartX = mouseX - screenX1;
                     this.textBoxDragStartY = mouseY - screenY1;
                     return true;
                 }
-                // Установка каретки и выделение
                 if (mouseX >= screenX1 && mouseX <= screenX2 && mouseY >= screenY1 && mouseY <= screenY2) {
                     int charIndex = getCharIndexAtMouse(box, screenX1, screenY1, screenX2, mouseX, mouseY);
                     boolean hasShift = Screen.hasShiftDown();
@@ -1491,7 +1487,19 @@ public class SketchbookScreen extends Screen {
                     return true;
                 }
             }
-            return true;
+
+            // Если клик прошёл мимо текстовой рамки и кнопок — запекаем текст и даём возможность обработать клик другим элементам
+            commitTextToCanvas();
+        }
+
+// ... далее обработка поворота скетчбука при клике по кнопке ...
+        if (lMouseX >= btnX && lMouseX < btnX + (btnFileWidth * this.scale) && lMouseY >= btnY && lMouseY < btnY + (btnFileHeight * this.scale)) {
+            if (button == 0) {
+                this.rotationAngle = (this.rotationAngle + 90.0f) % 360.0f;
+                clampSketchbook();
+                this.isRotating = true;
+                return true;
+            }
         }
 
         // --- 4. СОЗДАНИЕ НОВОГО ТЕКСТОВОГО ПОЛЯ (Только если нет активного) ---
@@ -1705,6 +1713,23 @@ public class SketchbookScreen extends Screen {
         int renderY = (int) this.exactGuiTop;
         int canvasScreenLeft = renderX + ((this.frameWidth + this.deadZoneWidth) * this.scale);
 
+        // 1. Перемещение самого скетчбука по экрану
+        if (this.isDragging) {
+            this.exactGuiLeft += dragX;
+            this.exactGuiTop += dragY;
+            clampSketchbook();
+            return true;
+        }
+
+        // 2. Вращение скетчбука мышью
+        if (this.isRotating) {
+            this.rotationAngle = (this.rotationAngle + (float) dragX) % 360.0f;
+            if (this.rotationAngle < 0) this.rotationAngle += 360.0f;
+            clampSketchbook();
+            return true;
+        }
+
+        // 3. Перемещение текстовой рамки
         if (this.isTextBoxDragging && this.activeTextBox != null) {
             double pCell = (double) this.scale / this.resolutionMultiplier;
             int newX1 = (int) ((mouseX - this.textBoxDragStartX - canvasScreenLeft) / pCell);
@@ -1720,6 +1745,7 @@ public class SketchbookScreen extends Screen {
             return true;
         }
 
+        // 4. Изменение размера текстовой рамки
         if (this.isTextBoxResizing && this.activeTextBox != null) {
             double pCell = (double) this.scale / this.resolutionMultiplier;
             int currentX2 = (int) ((mouseX - canvasScreenLeft) / pCell);
@@ -2447,11 +2473,9 @@ public class SketchbookScreen extends Screen {
             };
             int finalArgb = (alpha << 24) | baseRgb;
 
-            // Вычисляем поворот скетчбука в шагах по 90° (0, 1, 2, 3)
             int sketchbookSteps = Math.round(this.rotationAngle / 90.0f) % 4;
             if (sketchbookSteps < 0) sketchbookSteps += 4;
 
-            // Компенсируем поворот альбома, чтобы запеченный текст сохранился в нужной ориентации
             int finalRotation = (box.rotation - sketchbookSteps) & 3;
 
             TextElement element = new TextElement(

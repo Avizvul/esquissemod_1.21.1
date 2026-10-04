@@ -436,6 +436,10 @@ public class SketchbookScreen extends Screen {
     private void renderContent(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         this.lastMouseX = mouseX;
         this.lastMouseY = mouseY;
+        double[] logicalMouse = getLogicalMouse(mouseX, mouseY);
+        double lMouseX = logicalMouse[0];
+        double lMouseY = logicalMouse[1];
+
 
         if (this.isQuickRulerMode) {
             this.rulerX = (this.quickRulerStartX + mouseX) / 2.0;
@@ -766,6 +770,7 @@ public class SketchbookScreen extends Screen {
             guiGraphics.drawString(this.font, "(T)", textSymbolX, textSymbolY, symbolColor, true);
         }
 
+        // === ОТРИСОВКА ВИЗУАЛА ЛИНЕЙКИ ===
         if (this.isRulerActive) {
             guiGraphics.pose().pushPose();
             guiGraphics.pose().translate(this.rulerX, this.rulerY, 0);
@@ -773,6 +778,38 @@ public class SketchbookScreen extends Screen {
             guiGraphics.pose().translate(-this.rulerWidth / 2.0, 0, 0);
             guiGraphics.blit(RULER_TEX, 0, 0, this.rulerWidth, this.rulerHeight, 0.0f, 0.0f, this.rulerWidth, this.rulerHeight, this.rulerWidth, this.rulerHeight);
             guiGraphics.pose().popPose();
+        }
+
+        // === ОТРИСОВКА ВИЗУАЛА ЦИРКУЛЯ ===
+        if (this.compassState != CompassState.INACTIVE) {
+            double screenAnchorX = lMouseX, screenAnchorY = lMouseY;
+            double screenPencilX = lMouseX, screenPencilY = lMouseY;
+
+            if (this.compassState != CompassState.FOLDED) {
+                screenAnchorX = this.compassAnchorX;
+                screenAnchorY = this.compassAnchorY;
+
+                if (this.compassState == CompassState.ANCHORED) {
+                    double dx = lMouseX - this.compassAnchorX;
+                    double dy = lMouseY - this.compassAnchorY;
+                    double dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist > 192.0) {
+                        dx = (dx / dist) * 192.0;
+                        dy = (dy / dist) * 192.0;
+                    }
+                    screenPencilX = this.compassAnchorX + dx;
+                    screenPencilY = this.compassAnchorY + dy;
+                } else if (this.compassState == CompassState.LOCKED) {
+                    double angle = Math.atan2(lMouseY - this.compassAnchorY, lMouseX - this.compassAnchorX);
+                    screenPencilX = this.compassAnchorX + this.compassRadius * Math.cos(angle);
+                    screenPencilY = this.compassAnchorY + this.compassRadius * Math.sin(angle);
+                }
+            }
+
+            // Вызов геометрического рендера 3 частей циркуля
+            net.avizvul.esquissemod.client.render.CompassGeometryCalculator.renderCompass(
+                    guiGraphics, screenAnchorX, screenAnchorY, screenPencilX, screenPencilY
+            );
         }
 
         // =========================================================================
@@ -1549,6 +1586,24 @@ public class SketchbookScreen extends Screen {
                 this.activeTextBox = new TextBoxState(canvasX, canvasY);
                 this.isTextModeActive = true;
                 this.isTextCreatingWithDrag = true;
+                return true;
+            }
+        }
+        // === ЗАХВАТ И ВРАЩЕНИЕ ЛИНЕЙКИ ПО ЛКМ ===
+        if (button == 0 && this.isRulerActive && !this.isQuickRulerMode) {
+            double dx = mouseX - this.rulerX;
+            double dy = mouseY - this.rulerY;
+            double rad = Math.toRadians(-this.rulerAngle);
+            double localX = dx * Math.cos(rad) - dy * Math.sin(rad);
+            double localY = dx * Math.sin(rad) + dy * Math.cos(rad);
+
+            if (Math.abs(localX) <= this.rulerWidth / 2.0 && localY >= 0 && localY <= this.rulerHeight) {
+                if (Screen.hasShiftDown()) {
+                    this.isRulerRotating = true;
+                    this.rulerAngleOffset = Math.toDegrees(Math.atan2(mouseY - this.rulerY, mouseX - this.rulerX)) - this.rulerAngle;
+                } else {
+                    this.isRulerDragging = true;
+                }
                 return true;
             }
         }

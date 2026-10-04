@@ -100,6 +100,7 @@ public class SketchbookScreen extends Screen {
     private static double savedRulerY = -1;
     private static float savedRulerAngle = 0.0f;
     private static boolean wasRulerActive = false;
+    private static final double rulerHoverPadding = 12.0;
 
     private boolean isMagnifyingMode = false;
     private boolean isMagnifierLocked = false;
@@ -559,22 +560,21 @@ public class SketchbookScreen extends Screen {
                 double maxX = -Double.MAX_VALUE, maxY = -Double.MAX_VALUE;
 
                 for (int i = 0; i < 4; i++) {
-                    double dx = px[i] - cx;
-                    double dy = py[i] - cy;
-                    double rx = cx + (dx * cos - dy * sin);
-                    double ry = cy + (dx * sin + dy * cos);
-                    if (rx < minX) minX = rx;
-                    if (rx > maxX) maxX = rx;
-                    if (ry < minY) minY = ry;
-                    if (ry > maxY) maxY = ry;
+                    double nx = cx + (px[i] - cx) * cos - (py[i] - cy) * sin;
+                    double ny = cy + (px[i] - cx) * sin + (py[i] - cy) * cos;
+                    minX = Math.min(minX, nx);
+                    minY = Math.min(minY, ny);
+                    maxX = Math.max(maxX, nx);
+                    maxY = Math.max(maxY, ny);
                 }
+
 
                 int clipX1 = (int) Math.floor(minX);
                 int clipY1 = (int) Math.floor(minY);
                 int clipX2 = (int) Math.ceil(maxX);
                 int clipY2 = (int) Math.ceil(maxY);
 
-// Включаем динамический Scissor
+                // Включаем динамический Scissor
                 guiGraphics.enableScissor(clipX1, clipY1, clipX2, clipY2);
 
                 if (this.textElements != null && !this.textElements.isEmpty()) {
@@ -1472,21 +1472,28 @@ public class SketchbookScreen extends Screen {
         // --- 2. КЛИК ПО (T) НАД КАРАНДАШОМ ---
         boolean isPencilSelected = (this.activeTool == Tool.PENCIL) || (this.activeTool == Tool.TEXT && this.previousDrawingTool == Tool.PENCIL);
         boolean isColorPencilSelected = (this.activeTool == Tool.COLOR_PENCIL) || (this.activeTool == Tool.TEXT && this.previousDrawingTool == Tool.COLOR_PENCIL);
+
         if ((hasPencil && isPencilSelected) || (hasColorPencil && isColorPencilSelected)) {
+            // Ветка else срабатывает только тогда, когда isPencilSelected == false,
+            // а значит isColorPencilSelected гарантированно true
             int activeX = isPencilSelected ? toolCoords.pencilX() : toolCoords.colorPencilX();
             int textSymbolX = activeX + (scaledBtnWidth / 2) - (this.font.width("(T)") / 2);
             int textSymbolY = peekY - 38;
 
             if (mouseX >= textSymbolX - 2 && mouseX < textSymbolX + 18 && mouseY >= textSymbolY - 2 && mouseY < textSymbolY + 12) {
                 if (this.activeTool == Tool.TEXT) {
+                    // Возвращаем тот инструмент, который был выбран ДО текстового режима (простой карандаш, цветной)
                     this.activeTool = this.previousDrawingTool;
                 } else {
+                    // Запоминаем текущий выбранный карандаш и переключаемся в режим текста
                     this.previousDrawingTool = this.activeTool;
                     this.activeTool = Tool.TEXT;
+                    this.isTextModeActive = true;
                 }
                 return true;
             }
         }
+
 
         // --- 3. ВЗАИМОДЕЙСТВИЕ С АКТИВНОЙ ТЕКСТОВОЙ РАМКОЙ И ПАНЕЛЬЮ ---
         if (this.isTextModeActive && this.activeTextBox != null) {

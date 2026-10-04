@@ -544,12 +544,6 @@ public class SketchbookScreen extends Screen {
                 guiGraphics.fill(canvasScreenLeft, renderY, canvasScreenLeft + screenWidth, renderY + screenHeight, 0xFFFFFFFF);
             });
 
-            // 2. Поворачиваем матрицу рендера текста на угол скетчбука
-            guiGraphics.pose().pushPose();
-            guiGraphics.pose().translate(cx, cy, 0);
-            guiGraphics.pose().mulPose(com.mojang.math.Axis.ZP.rotationDegrees(this.rotationAngle));
-            guiGraphics.pose().translate(-cx, -cy, 0);
-
             if (this.textElements != null && !this.textElements.isEmpty()) {
                 double pCell = (double) this.scale / this.resolutionMultiplier;
                 int paperX1 = canvasScreenLeft;

@@ -690,7 +690,7 @@ public class SketchbookScreen extends Screen {
                 guiGraphics.fill(screenX2, py, screenX2 + 1, Math.min(py + dashLen, screenY2), outlineColor);
             }
 
-            // 2. Красные абсолютные ручки управления
+            // 2. Абсолютные красные ручки управления
             int redColor = 0xFFFF2222;
             int darkRedBorder = 0xFF880000;
 
@@ -699,113 +699,74 @@ public class SketchbookScreen extends Screen {
             guiGraphics.fill(screenX1, screenY1 - 6, screenX2 - 12, screenY1 - 5, darkRedBorder);
 
             // Ручка переключения ориентации [↕]
-            guiGraphics.fill(screenX2 - 11, screenY1 - 6, screenX2, screenY1, box.isVertical ? 0xFF0055A0 : 0xFF007ACC);
+            guiGraphics.fill(screenX2 - 11, screenY1 - 6, screenX2, screenY1, (box.rotation > 0) ? 0xFF0055A0 : 0xFF007ACC);
             guiGraphics.drawString(this.font, "↕", screenX2 - 8, screenY1 - 6, 0xFFFFFFFF, false);
 
             // Ручка изменения размера (правый нижний угол)
             guiGraphics.fill(screenX2 - 5, screenY2 - 5, screenX2 + 4, screenY2 + 4, darkRedBorder);
             guiGraphics.fill(screenX2 - 4, screenY2 - 4, screenX2 + 3, screenY2 + 3, redColor);
 
-            // 3. Текст, выделение и каретка
+            // 3. Текст, выделение и мигающая каретка
             float renderScale = (float) (box.fontScale * pCell);
             int lineH = (int) (9 * renderScale);
             int textColor = getActiveTextColorArgb();
+            int rotDegrees = (box.rotation % 4) * 90;
 
-            if (box.isVertical) {
-                int maxW = Math.max(10, (int) ((screenY2 - screenY1 - 4) / renderScale));
-                java.util.List<TextBoxState.TextLine> lines = box.getWrappedLines(this.font, maxW);
+            int maxW = Math.max(10, (int) ((screenX2 - screenX1 - 4) / renderScale));
+            java.util.List<TextBoxState.TextLine> lines = box.getWrappedLines(this.font, maxW);
 
-                if (box.hasSelection()) {
-                    int min = box.getSelectionMin();
-                    int max = box.getSelectionMax();
-                    for (int l = 0; l < lines.size(); l++) {
-                        TextBoxState.TextLine line = lines.get(l);
-                        int lineX = screenX2 - 2 - l * lineH;
-                        if (max > line.startCharIndex && min <= line.endCharIndex) {
-                            int selStart = Math.max(min, line.startCharIndex);
-                            int selEnd = Math.min(max, line.endCharIndex);
-                            String textBefore = box.getFormattedSubstring(line.startCharIndex, selStart);
-                            String textSelected = box.getFormattedSubstring(line.startCharIndex, selEnd);
-
-                            int hY1 = screenY1 + 2 + (int) (this.font.width(textBefore) * renderScale);
-                            int hY2 = screenY1 + 2 + (int) (this.font.width(textSelected) * renderScale);
-                            guiGraphics.fill(lineX - lineH, hY1, lineX, hY2, 0x802266FF);
-                        }
-                    }
-                }
-
-                for (int l = 0; l < lines.size(); l++) {
-                    TextBoxState.TextLine line = lines.get(l);
-                    int lineX = screenX2 - 2 - l * lineH;
-                    guiGraphics.pose().pushPose();
-                    guiGraphics.pose().translate(lineX, screenY1 + 2, 0);
-                    guiGraphics.pose().mulPose(com.mojang.math.Axis.ZP.rotationDegrees(90f));
-                    guiGraphics.pose().scale(renderScale, renderScale, 1.0f);
-                    guiGraphics.drawString(this.font, line.formattedText, 0, 0, textColor, false);
-                    guiGraphics.pose().popPose();
-                }
-
-                int caretLineIdx = 0;
-                TextBoxState.TextLine caretLine = lines.get(0);
-                for (int l = 0; l < lines.size(); l++) {
-                    TextBoxState.TextLine line = lines.get(l);
-                    if (box.caret >= line.startCharIndex && (box.caret <= line.endCharIndex || l == lines.size() - 1)) {
-                        caretLineIdx = l; caretLine = line; break;
-                    }
-                }
-                String textBeforeCaret = box.getFormattedSubstring(caretLine.startCharIndex, box.caret);
-                int caretX = screenX2 - 2 - caretLineIdx * lineH;
-                int caretY = screenY1 + 2 + (int) (this.font.width(textBeforeCaret) * renderScale);
-                if (System.currentTimeMillis() / 500 % 2 == 0) {
-                    guiGraphics.fill(caretX - lineH, caretY, caretX, caretY + 1, 0xFFFFFFFF);
-                }
-            } else {
-                int maxW = Math.max(10, (int) ((screenX2 - screenX1 - 4) / renderScale));
-                java.util.List<TextBoxState.TextLine> lines = box.getWrappedLines(this.font, maxW);
-
-                if (box.hasSelection()) {
-                    int min = box.getSelectionMin();
-                    int max = box.getSelectionMax();
-                    for (int l = 0; l < lines.size(); l++) {
-                        TextBoxState.TextLine line = lines.get(l);
-                        int lineY = screenY1 + 2 + l * lineH;
-                        if (max > line.startCharIndex && min <= line.endCharIndex) {
-                            int selStart = Math.max(min, line.startCharIndex);
-                            int selEnd = Math.min(max, line.endCharIndex);
-                            String textBefore = box.getFormattedSubstring(line.startCharIndex, selStart);
-                            String textSelected = box.getFormattedSubstring(line.startCharIndex, selEnd);
-
-                            int hX1 = screenX1 + 2 + (int) (this.font.width(textBefore) * renderScale);
-                            int hX2 = screenX1 + 2 + (int) (this.font.width(textSelected) * renderScale);
-                            guiGraphics.fill(hX1, lineY, hX2, lineY + lineH, 0x802266FF);
-                        }
-                    }
-                }
-
+            if (box.hasSelection()) {
+                int min = box.getSelectionMin();
+                int max = box.getSelectionMax();
                 for (int l = 0; l < lines.size(); l++) {
                     TextBoxState.TextLine line = lines.get(l);
                     int lineY = screenY1 + 2 + l * lineH;
-                    guiGraphics.pose().pushPose();
-                    guiGraphics.pose().translate(screenX1 + 2, lineY, 0);
-                    guiGraphics.pose().scale(renderScale, renderScale, 1.0f);
-                    guiGraphics.drawString(this.font, line.formattedText, 0, 0, textColor, false);
-                    guiGraphics.pose().popPose();
-                }
+                    if (max > line.startCharIndex && min <= line.endCharIndex) {
+                        int selStart = Math.max(min, line.startCharIndex);
+                        int selEnd = Math.min(max, line.endCharIndex);
+                        String textBefore = box.getFormattedSubstring(line.startCharIndex, selStart);
+                        String textSelected = box.getFormattedSubstring(line.startCharIndex, selEnd);
 
-                int caretLineIdx = 0;
-                TextBoxState.TextLine caretLine = lines.get(0);
-                for (int l = 0; l < lines.size(); l++) {
-                    TextBoxState.TextLine line = lines.get(l);
-                    if (box.caret >= line.startCharIndex && (box.caret <= line.endCharIndex || l == lines.size() - 1)) {
-                        caretLineIdx = l; caretLine = line; break;
+                        int hX1 = screenX1 + 2 + (int) (this.font.width(textBefore) * renderScale);
+                        int hX2 = screenX1 + 2 + (int) (this.font.width(textSelected) * renderScale);
+                        guiGraphics.fill(hX1, lineY, hX2, lineY + lineH, 0x802266FF);
                     }
                 }
-                String textBeforeCaret = box.getFormattedSubstring(caretLine.startCharIndex, box.caret);
-                int caretX = screenX1 + 2 + (int) (this.font.width(textBeforeCaret) * renderScale);
-                int caretY = screenY1 + 2 + caretLineIdx * lineH;
-                if (System.currentTimeMillis() / 500 % 2 == 0) {
-                    guiGraphics.fill(caretX, caretY, caretX + 1, caretY + lineH, 0xFFFFFFFF);
+            }
+
+            for (int l = 0; l < lines.size(); l++) {
+                TextBoxState.TextLine line = lines.get(l);
+                guiGraphics.pose().pushPose();
+                if (rotDegrees == 90) {
+                    guiGraphics.pose().translate(screenX2 - 2 - l * lineH, screenY1 + 2, 0);
+                    guiGraphics.pose().mulPose(com.mojang.math.Axis.ZP.rotationDegrees(90f));
+                } else if (rotDegrees == 180) {
+                    guiGraphics.pose().translate(screenX2 - 2, screenY2 - 2 - l * lineH, 0);
+                    guiGraphics.pose().mulPose(com.mojang.math.Axis.ZP.rotationDegrees(180f));
+                } else if (rotDegrees == 270) {
+                    guiGraphics.pose().translate(screenX1 + 2 + l * lineH, screenY2 - 2, 0);
+                    guiGraphics.pose().mulPose(com.mojang.math.Axis.ZP.rotationDegrees(270f));
+                } else {
+                    guiGraphics.pose().translate(screenX1 + 2, screenY1 + 2 + l * lineH, 0);
                 }
+                guiGraphics.pose().scale(renderScale, renderScale, 1.0f);
+                guiGraphics.drawString(this.font, line.formattedText, 0, 0, textColor, false);
+                guiGraphics.pose().popPose();
+            }
+
+            int caretLineIdx = 0;
+            TextBoxState.TextLine caretLine = lines.get(0);
+            for (int l = 0; l < lines.size(); l++) {
+                TextBoxState.TextLine line = lines.get(l);
+                if (box.caret >= line.startCharIndex && (box.caret <= line.endCharIndex || l == lines.size() - 1)) {
+                    caretLineIdx = l; caretLine = line; break;
+                }
+            }
+            String textBeforeCaret = box.getFormattedSubstring(caretLine.startCharIndex, box.caret);
+            int caretX = screenX1 + 2 + (int) (this.font.width(textBeforeCaret) * renderScale);
+            int caretY = screenY1 + 2 + caretLineIdx * lineH;
+            if (System.currentTimeMillis() / 500 % 2 == 0) {
+                guiGraphics.fill(caretX, caretY, caretX + 1, caretY + lineH, 0xFFFFFFFF);
             }
         }
 
@@ -887,37 +848,120 @@ public class SketchbookScreen extends Screen {
         }
 
         // =========================================================================
-        // 2. РЕНДЕР ПАНЕЛИ ФОРМАТИРОВАНИЯ (ВСЕГДА ПОД НИЖНИМ КРАЕМ РАМКИ НА ЭКРАНЕ)
+        // 2. ЭКРАННЫЙ РЕНДЕР АКТИВНОГО ТЕКСТОВОГО ПОЛЯ
         // =========================================================================
         if (this.isTextModeActive && this.activeTextBox != null) {
             TextBoxState box = this.activeTextBox;
             double pCell = (double) this.scale / this.resolutionMultiplier;
 
-            double rad = Math.toRadians(this.rotationAngle);
-            double cos = Math.cos(rad);
-            double sin = Math.sin(rad);
+            // Экранные координаты прямоугольника текстовой рамки
+            int screenX1 = canvasScreenLeft + (int) (box.x1 * pCell);
+            int screenY1 = renderY + (int) (box.y1 * pCell);
+            int screenX2 = canvasScreenLeft + (int) (box.x2 * pCell);
+            int screenY2 = renderY + (int) (box.y2 * pCell);
 
-            // Трансформируем 4 угла рамки в экранное пространство
-            double rx1 = canvasScreenLeft + box.x1 * pCell - cx;
-            double ry1 = renderY + box.y1 * pCell - cy;
-            double rx2 = canvasScreenLeft + box.x2 * pCell - cx;
-            double ry2 = renderY + box.y2 * pCell - cy;
+            // 1. Отрисовка символов, выделения и каретки С ОБРЕЗКОЙ ПО КРАЯМ БУМАГИ
+            int scissorX1 = canvasScreenLeft;
+            int scissorY1 = renderY;
+            int scissorX2 = canvasScreenLeft + (this.canvasWidth * this.scale);
+            int scissorY2 = renderY + (this.canvasHeight * this.scale);
 
-            double sy1 = cy + (rx1 * sin + ry1 * cos);
-            double sy2 = cy + (rx2 * sin + ry1 * cos);
-            double sy3 = cy + (rx1 * sin + ry2 * cos);
-            double sy4 = cy + (rx2 * sin + ry2 * cos);
+            guiGraphics.enableScissor(scissorX1, scissorY1, scissorX2, scissorY2);
 
-            // Находим самое нижнее Y-положение на экране
-            int maxY = (int) Math.max(Math.max(sy1, sy2), Math.max(sy3, sy4));
+            float renderScale = (float) (box.fontScale * pCell);
+            int lineH = (int) (9 * renderScale);
+            int textColor = getActiveTextColorArgb();
+            int rotDegrees = (box.rotation % 4) * 90;
 
-            double midRx = (rx1 + rx2) / 2.0;
-            double midRy = (ry1 + ry2) / 2.0;
-            double screenCenterX = cx + (midRx * cos - midRy * sin);
+            int maxW = Math.max(10, (int) ((screenX2 - screenX1 - 4) / renderScale));
+            java.util.List<TextBoxState.TextLine> lines = box.getWrappedLines(this.font, maxW);
 
-            int toolbarX = (int) screenCenterX - 75;
-            int toolbarY = maxY + 8;
+            if (box.hasSelection()) {
+                int min = box.getSelectionMin();
+                int max = box.getSelectionMax();
+                for (int l = 0; l < lines.size(); l++) {
+                    TextBoxState.TextLine line = lines.get(l);
+                    int lineY = screenY1 + 2 + l * lineH;
+                    if (max > line.startCharIndex && min <= line.endCharIndex) {
+                        int selStart = Math.max(min, line.startCharIndex);
+                        int selEnd = Math.min(max, line.endCharIndex);
+                        String textBefore = box.getFormattedSubstring(line.startCharIndex, selStart);
+                        String textSelected = box.getFormattedSubstring(line.startCharIndex, selEnd);
 
+                        int hX1 = screenX1 + 2 + (int) (this.font.width(textBefore) * renderScale);
+                        int hX2 = screenX1 + 2 + (int) (this.font.width(textSelected) * renderScale);
+                        guiGraphics.fill(hX1, lineY, hX2, lineY + lineH, 0x802266FF);
+                    }
+                }
+            }
+
+            for (int l = 0; l < lines.size(); l++) {
+                TextBoxState.TextLine line = lines.get(l);
+                guiGraphics.pose().pushPose();
+                if (rotDegrees == 90) {
+                    guiGraphics.pose().translate(screenX2 - 2 - l * lineH, screenY1 + 2, 0);
+                    guiGraphics.pose().mulPose(com.mojang.math.Axis.ZP.rotationDegrees(90f));
+                } else if (rotDegrees == 180) {
+                    guiGraphics.pose().translate(screenX2 - 2, screenY2 - 2 - l * lineH, 0);
+                    guiGraphics.pose().mulPose(com.mojang.math.Axis.ZP.rotationDegrees(180f));
+                } else if (rotDegrees == 270) {
+                    guiGraphics.pose().translate(screenX1 + 2 + l * lineH, screenY2 - 2, 0);
+                    guiGraphics.pose().mulPose(com.mojang.math.Axis.ZP.rotationDegrees(270f));
+                } else {
+                    guiGraphics.pose().translate(screenX1 + 2, screenY1 + 2 + l * lineH, 0);
+                }
+                guiGraphics.pose().scale(renderScale, renderScale, 1.0f);
+                guiGraphics.drawString(this.font, line.formattedText, 0, 0, textColor, false);
+                guiGraphics.pose().popPose();
+            }
+
+            // Каретка
+            int caretLineIdx = 0;
+            TextBoxState.TextLine caretLine = lines.get(0);
+            for (int l = 0; l < lines.size(); l++) {
+                TextBoxState.TextLine line = lines.get(l);
+                if (box.caret >= line.startCharIndex && (box.caret <= line.endCharIndex || l == lines.size() - 1)) {
+                    caretLineIdx = l; caretLine = line; break;
+                }
+            }
+            String textBeforeCaret = box.getFormattedSubstring(caretLine.startCharIndex, box.caret);
+            int caretX = screenX1 + 2 + (int) (this.font.width(textBeforeCaret) * renderScale);
+            int caretY = screenY1 + 2 + caretLineIdx * lineH;
+            if (System.currentTimeMillis() / 500 % 2 == 0) {
+                guiGraphics.fill(caretX, caretY, caretX + 1, caretY + lineH, 0xFFFFFFFF);
+            }
+
+            guiGraphics.disableScissor();
+
+            // 2. Рамка и ручки управления (Рендерим поверх без Scissor, чтобы ручки были видны всегда)
+            int dashLen = 4, dashGap = 2, outlineColor = 0xFF007ACC;
+            for (int px = screenX1; px < screenX2; px += dashLen + dashGap) {
+                guiGraphics.fill(px, screenY1, Math.min(px + dashLen, screenX2), screenY1 + 1, outlineColor);
+                guiGraphics.fill(px, screenY2, Math.min(px + dashLen, screenX2), screenY2 + 1, outlineColor);
+            }
+            for (int py = screenY1; py < screenY2; py += dashLen + dashGap) {
+                guiGraphics.fill(screenX1, py, screenX1 + 1, Math.min(py + dashLen, screenY2), outlineColor);
+                guiGraphics.fill(screenX2, py, screenX2 + 1, Math.min(py + dashLen, screenY2), outlineColor);
+            }
+
+            int redColor = 0xFFFF2222;
+            int darkRedBorder = 0xFF880000;
+
+            // Плашка перемещения (сверху)
+            guiGraphics.fill(screenX1, screenY1 - 6, screenX2 - 12, screenY1, redColor);
+            guiGraphics.fill(screenX1, screenY1 - 6, screenX2 - 12, screenY1 - 5, darkRedBorder);
+
+            // Кнопка переключения ориентации [↕]
+            guiGraphics.fill(screenX2 - 11, screenY1 - 6, screenX2, screenY1, (box.rotation > 0) ? 0xFF0055A0 : 0xFF007ACC);
+            guiGraphics.drawString(this.font, "↕", screenX2 - 8, screenY1 - 6, 0xFFFFFFFF, false);
+
+            // Нижний правый угол — изменение размера
+            guiGraphics.fill(screenX2 - 5, screenY2 - 5, screenX2 + 4, screenY2 + 4, darkRedBorder);
+            guiGraphics.fill(screenX2 - 4, screenY2 - 4, screenX2 + 3, screenY2 + 3, redColor);
+
+            // 3. Неподвижная панель форматирования (ровно под нижней границей рамки)
+            int toolbarX = (screenX1 + screenX2) / 2 - 75;
+            int toolbarY = screenY2 + 8;
             toolbarX = Math.max(10, Math.min(this.width - 160, toolbarX));
             toolbarY = Math.max(10, Math.min(this.height - 40, toolbarY));
 
@@ -950,7 +994,7 @@ public class SketchbookScreen extends Screen {
             guiGraphics.fill(toolbarX + 90, toolbarY + 3, toolbarX + 102, toolbarY + 17, 0xFF007ACC);
             guiGraphics.drawString(this.font, opacityLabel, toolbarX + 94, toolbarY + 5, 0xFFFFFFFF, false);
 
-            guiGraphics.fill(toolbarX + 104, toolbarY + 3, toolbarX + 116, toolbarY + 17, box.isVertical ? 0xFF007ACC : 0x40FFFFFF);
+            guiGraphics.fill(toolbarX + 104, toolbarY + 3, toolbarX + 116, toolbarY + 17, (box.rotation > 0) ? 0xFF007ACC : 0x40FFFFFF);
             guiGraphics.drawString(this.font, "↕", toolbarX + 108, toolbarY + 5, 0xFFFFFFFF, false);
 
             guiGraphics.fill(toolbarX + 118, toolbarY + 3, toolbarX + 130, toolbarY + 17, 0xFF228B22);
@@ -959,7 +1003,10 @@ public class SketchbookScreen extends Screen {
             guiGraphics.fill(toolbarX + 132, toolbarY + 3, toolbarX + 144, toolbarY + 17, 0xFFB22222);
             guiGraphics.drawString(this.font, "x", toolbarX + 136, toolbarY + 5, 0xFFFFFFFF, false);
 
-            if (hasColorPencil || hasColorMarker) {
+            // Палитра показывается ТОЛЬКО для цветного карандаша/маркера
+            boolean isColorTool = (effectiveTool == Tool.COLOR_PENCIL || effectiveTool == Tool.COLOR_MARKER);
+
+            if (isColorTool) {
                 int colorBarY = toolbarY + 20;
                 guiGraphics.fill(toolbarX, colorBarY, toolbarX + 150, colorBarY + 12, 0xE0000000);
 
@@ -978,7 +1025,6 @@ public class SketchbookScreen extends Screen {
             }
         }
     }
-
 
     //_________________________________________________________________________________
 
@@ -1487,23 +1533,14 @@ public class SketchbookScreen extends Screen {
             int screenX2 = canvasScreenLeft + (int) (box.x2 * pCell);
             int screenY2 = renderY + (int) (box.y2 * pCell);
 
-            double cx = renderX + drawWidth / 2.0;
-            double cy = renderY + (this.fileHeight * this.scale) / 2.0;
-            double rad = Math.toRadians(this.rotationAngle);
-            double cos = Math.cos(rad);
-            double sin = Math.sin(rad);
-
-            double localX = screenX1 - cx;
-            double localY = (screenY2 + 6) - cy;
-
-            int toolbarX = (int) (cx + (localX * cos - localY * sin));
-            int toolbarY = (int) (cy + (localX * sin + localY * cos));
+            int toolbarX = (screenX1 + screenX2) / 2 - 75;
+            int toolbarY = screenY2 + 8;
             toolbarX = Math.max(10, Math.min(this.width - 160, toolbarX));
             toolbarY = Math.max(10, Math.min(this.height - 40, toolbarY));
 
             int colorBarY = toolbarY + 20;
 
-            // А) Панель форматирования
+            // 1. Клики по панели форматирования
             if (mouseY >= toolbarY && mouseY <= toolbarY + 20) {
                 if (mouseX >= toolbarX + 4 && mouseX <= toolbarX + 16) { box.applyFormattingCode("§l"); return true; }
                 if (mouseX >= toolbarX + 18 && mouseX <= toolbarX + 30) { box.applyFormattingCode("§o"); return true; }
@@ -1517,8 +1554,11 @@ public class SketchbookScreen extends Screen {
                 if (mouseX >= toolbarX + 132 && mouseX <= toolbarX + 144) { this.isTextModeActive = false; this.activeTextBox = null; return true; }
             }
 
-            // Б) Цвета
-            if (hasColorPencil && mouseY >= colorBarY && mouseY <= colorBarY + 12) {
+            // 2. Клики по цветам палитры (ТОЛЬКО ЕСЛИ АКТИВЕН ЦВЕТНОЙ ИНСТРУМЕНТ)
+            Tool currentDrawingTool = (this.activeTool == Tool.TEXT) ? this.previousDrawingTool : this.activeTool;
+            boolean isColorTool = (currentDrawingTool == Tool.COLOR_PENCIL || currentDrawingTool == Tool.COLOR_MARKER);
+
+            if (isColorTool && mouseY >= colorBarY && mouseY <= colorBarY + 12) {
                 for (int colorId = 0; colorId < 16; colorId++) {
                     int colorX = toolbarX + 6 + colorId * 8;
                     int colorY = colorBarY + 3;
@@ -1529,25 +1569,29 @@ public class SketchbookScreen extends Screen {
                 }
             }
 
-            // В) Повернутая текстовая рамка (логические координаты)
+            // 3. Ручки управления рамкой
             if (button == 0) {
                 int handleSize = 8;
-                if (lMouseX >= screenX2 - handleSize && lMouseX <= screenX2 + handleSize && lMouseY >= screenY2 - handleSize && lMouseY <= screenY2 + handleSize) {
+                // Изменение размера
+                if (mouseX >= screenX2 - handleSize && mouseX <= screenX2 + handleSize && mouseY >= screenY2 - handleSize && mouseY <= screenY2 + handleSize) {
                     this.isTextBoxResizing = true;
                     return true;
                 }
-                if (lMouseX >= screenX2 - 12 && lMouseX <= screenX2 + 4 && lMouseY >= screenY1 - 6 && lMouseY <= screenY1 + 2) {
+                // Ручка переключения ориентации [↕]
+                if (mouseX >= screenX2 - 12 && mouseX <= screenX2 + 4 && mouseY >= screenY1 - 6 && mouseY <= screenY1 + 2) {
                     box.toggleOrientation();
                     return true;
                 }
-                if (lMouseX >= screenX1 && lMouseX <= screenX2 - 12 && lMouseY >= screenY1 - 6 && lMouseY <= screenY1 + 2) {
+                // Перемещение за верхнюю плашку
+                if (mouseX >= screenX1 && mouseX <= screenX2 - 12 && mouseY >= screenY1 - 6 && mouseY <= screenY1 + 2) {
                     this.isTextBoxDragging = true;
-                    this.textBoxDragStartX = lMouseX - screenX1;
-                    this.textBoxDragStartY = lMouseY - screenY1;
+                    this.textBoxDragStartX = mouseX - screenX1;
+                    this.textBoxDragStartY = mouseY - screenY1;
                     return true;
                 }
-                if (lMouseX >= screenX1 && lMouseX <= screenX2 && lMouseY >= screenY1 && lMouseY <= screenY2) {
-                    int charIndex = getCharIndexAtMouse(box, screenX1, screenY1, screenX2, lMouseX, lMouseY);
+                // Установка каретки и выделение
+                if (mouseX >= screenX1 && mouseX <= screenX2 && mouseY >= screenY1 && mouseY <= screenY2) {
+                    int charIndex = getCharIndexAtMouse(box, screenX1, screenY1, screenX2, mouseX, mouseY);
                     boolean hasShift = Screen.hasShiftDown();
                     box.setCaret(charIndex, hasShift);
                     this.isTextSelectingWithMouse = true;
@@ -2150,6 +2194,7 @@ public class SketchbookScreen extends Screen {
         public int x1, y1;
         public int x2, y2;
         public boolean isVertical = false;
+        public int rotation = 0; // 0 = 0°, 1 = 90°, 2 = 180°, 3 = 270°
 
         public java.util.List<StyledChar> chars = new java.util.ArrayList<>();
         public StringBuilder text = new StringBuilder();
@@ -2173,7 +2218,7 @@ public class SketchbookScreen extends Screen {
         public enum StyleType { BOLD, ITALIC, UNDERLINE, STRIKETHROUGH }
 
         public void toggleOrientation() {
-            this.isVertical = !this.isVertical;
+            this.rotation = (this.rotation + 1) % 4;
             updateText();
         }
 
@@ -2576,13 +2621,20 @@ public class SketchbookScreen extends Screen {
             };
             int finalArgb = (alpha << 24) | baseRgb;
 
+            // Вычисляем поворот скетчбука в шагах по 90° (0, 1, 2, 3)
+            int sketchbookSteps = Math.round(this.rotationAngle / 90.0f) % 4;
+            if (sketchbookSteps < 0) sketchbookSteps += 4;
+
+            // Компенсируем поворот альбома, чтобы запеченный текст сохранился в нужной ориентации
+            int finalRotation = (box.rotation - sketchbookSteps) & 3;
+
             TextElement element = new TextElement(
                     formattedString,
                     box.x1,
                     box.y1,
                     box.fontScale,
                     finalArgb,
-                    box.isVertical // Передаем флаг вертикальной ориентации
+                    finalRotation
             );
             this.textElements.add(element);
         }
@@ -2592,7 +2644,6 @@ public class SketchbookScreen extends Screen {
         this.activeTextBox = null;
         this.isTextCreatingWithDrag = false;
     }
-
 
 //_________________________________________________________________________________
 

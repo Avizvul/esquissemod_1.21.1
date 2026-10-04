@@ -753,7 +753,7 @@ public class SketchbookScreen extends Screen {
             int screenX2 = canvasScreenLeft + (int) (box.x2 * pCell);
             int screenY2 = renderY + (int) (box.y2 * pCell);
 
-            // 1. Ограничиваем отрисовку символов и каретки ПО ГРАНИЦАМ ХОЛСТА БУМАГИ
+            // 1. Ограничение попиксельной обрезкой СТРОГО по краям бумаги
             int clipX1 = canvasScreenLeft;
             int clipY1 = renderY;
             int clipX2 = canvasScreenLeft + (this.canvasWidth * this.scale);
@@ -764,10 +764,13 @@ public class SketchbookScreen extends Screen {
             float renderScale = (float) (box.fontScale * pCell);
             int lineH = (int) (9 * renderScale);
             int textColor = getActiveTextColorArgb();
-            int rotDegrees = (box.rotation % 4) * 90;
+            int rotStep = (box.rotation % 4 + 4) % 4;
 
-            // Перенос зависит ТОЛЬКО от ширины самого текстового поля (screenX2 - screenX1)
-            int maxW = Math.max(10, (int) ((screenX2 - screenX1 - 4) / renderScale));
+            // Расчет maxW: для 90° и 270° используем высоту поля (screenY2 - screenY1)
+            boolean isVerticalText = (rotStep == 1 || rotStep == 3);
+            int boxLineLength = isVerticalText ? (screenY2 - screenY1) : (screenX2 - screenX1);
+            int maxW = Math.max(10, (int) ((boxLineLength - 4) / renderScale));
+
             java.util.List<TextBoxState.TextLine> lines = box.getWrappedLines(this.font, maxW);
 
             if (box.hasSelection()) {
@@ -792,16 +795,16 @@ public class SketchbookScreen extends Screen {
             for (int l = 0; l < lines.size(); l++) {
                 TextBoxState.TextLine line = lines.get(l);
                 guiGraphics.pose().pushPose();
-                if (rotDegrees == 90) {
+                if (rotStep == 1) { // 90°
                     guiGraphics.pose().translate(screenX2 - 2 - l * lineH, screenY1 + 2, 0);
                     guiGraphics.pose().mulPose(com.mojang.math.Axis.ZP.rotationDegrees(90f));
-                } else if (rotDegrees == 180) {
+                } else if (rotStep == 2) { // 180°
                     guiGraphics.pose().translate(screenX2 - 2, screenY2 - 2 - l * lineH, 0);
                     guiGraphics.pose().mulPose(com.mojang.math.Axis.ZP.rotationDegrees(180f));
-                } else if (rotDegrees == 270) {
+                } else if (rotStep == 3) { // 270°
                     guiGraphics.pose().translate(screenX1 + 2 + l * lineH, screenY2 - 2, 0);
                     guiGraphics.pose().mulPose(com.mojang.math.Axis.ZP.rotationDegrees(270f));
-                } else {
+                } else { // 0°
                     guiGraphics.pose().translate(screenX1 + 2, screenY1 + 2 + l * lineH, 0);
                 }
                 guiGraphics.pose().scale(renderScale, renderScale, 1.0f);
@@ -809,7 +812,7 @@ public class SketchbookScreen extends Screen {
                 guiGraphics.pose().popPose();
             }
 
-            // Каретка
+            // Мигающая каретка
             int caretLineIdx = 0;
             TextBoxState.TextLine caretLine = lines.get(0);
             for (int l = 0; l < lines.size(); l++) {
@@ -827,7 +830,7 @@ public class SketchbookScreen extends Screen {
 
             guiGraphics.disableScissor();
 
-            // 2. Отрисовка пунктира и красных ручек (Без Scissor, чтобы ручки управления всегда были видны)
+            // 2. Отрисовка пунктира и красных ручек управления
             int dashLen = 4, dashGap = 2, outlineColor = 0xFF007ACC;
             for (int px = screenX1; px < screenX2; px += dashLen + dashGap) {
                 guiGraphics.fill(px, screenY1, Math.min(px + dashLen, screenX2), screenY1 + 1, outlineColor);
@@ -841,15 +844,12 @@ public class SketchbookScreen extends Screen {
             int redColor = 0xFFFF2222;
             int darkRedBorder = 0xFF880000;
 
-            // Плашка перемещения
             guiGraphics.fill(screenX1, screenY1 - 6, screenX2 - 12, screenY1, redColor);
             guiGraphics.fill(screenX1, screenY1 - 6, screenX2 - 12, screenY1 - 5, darkRedBorder);
 
-            // Ручка поворота [↕]
             guiGraphics.fill(screenX2 - 11, screenY1 - 6, screenX2, screenY1, (box.rotation > 0) ? 0xFF0055A0 : 0xFF007ACC);
             guiGraphics.drawString(this.font, "↕", screenX2 - 8, screenY1 - 6, 0xFFFFFFFF, false);
 
-            // Изменение размера (правый нижний угол)
             guiGraphics.fill(screenX2 - 5, screenY2 - 5, screenX2 + 4, screenY2 + 4, darkRedBorder);
             guiGraphics.fill(screenX2 - 4, screenY2 - 4, screenX2 + 3, screenY2 + 3, redColor);
 
@@ -1713,7 +1713,7 @@ public class SketchbookScreen extends Screen {
         int renderY = (int) this.exactGuiTop;
         int canvasScreenLeft = renderX + ((this.frameWidth + this.deadZoneWidth) * this.scale);
 
-        // 1. Перемещение самого скетчбука по экрану
+        // 1. Перемещение скетчбука по экрану
         if (this.isDragging) {
             this.exactGuiLeft += dragX;
             this.exactGuiTop += dragY;
@@ -1721,10 +1721,10 @@ public class SketchbookScreen extends Screen {
             return true;
         }
 
-        // 2. Вращение скетчбука мышью
+        // 2. Вращение скетчбука мышью (Исправлен знак: - dragX вращает по направлению мыши)
         if (this.isRotating) {
-            this.rotationAngle = (this.rotationAngle + (float) dragX) % 360.0f;
-            if (this.rotationAngle < 0) this.rotationAngle += 360.0f;
+            this.rotationAngle = (this.rotationAngle - (float) dragX) % 360.0f;
+            if (this.rotationAngle < 0.0f) this.rotationAngle += 360.0f;
             clampSketchbook();
             return true;
         }
@@ -2473,15 +2473,43 @@ public class SketchbookScreen extends Screen {
             };
             int finalArgb = (alpha << 24) | baseRgb;
 
-            int sketchbookSteps = Math.round(this.rotationAngle / 90.0f) % 4;
-            if (sketchbookSteps < 0) sketchbookSteps += 4;
+            double pCell = (double) this.scale / this.resolutionMultiplier;
+            int renderX = (int) this.exactGuiLeft;
+            int renderY = (int) this.exactGuiTop;
+            int drawWidth = this.fileWidth * this.scale;
+            int drawHeight = this.fileHeight * this.scale;
+            int canvasScreenLeft = renderX + ((this.frameWidth + this.deadZoneWidth) * this.scale);
 
-            int finalRotation = (box.rotation - sketchbookSteps) & 3;
+            // Центр вращения скетчбука на экране
+            double cx = renderX + drawWidth / 2.0;
+            double cy = renderY + drawHeight / 2.0;
+
+            // Перевод экранного угла и позиции в локальные координаты холста
+            double screenX1 = canvasScreenLeft + box.x1 * pCell;
+            double screenY1 = renderY + box.y1 * pCell;
+
+            double rad = Math.toRadians(-this.rotationAngle);
+            double cos = Math.cos(rad);
+            double sin = Math.sin(rad);
+
+            double dx = screenX1 - cx;
+            double dy = screenY1 - cy;
+
+            double unrotatedX = cx + (dx * cos - dy * sin);
+            double unrotatedY = cy + (dx * sin + dy * cos);
+
+            int localX = (int) Math.round((unrotatedX - canvasScreenLeft) / pCell);
+            int localY = (int) Math.round((unrotatedY - renderY) / pCell);
+
+            // Точный расчет угла запекания с учетом поворота холста
+            float textScreenAngle = (box.rotation % 4) * 90.0f;
+            float finalRotation = (textScreenAngle - this.rotationAngle) % 360.0f;
+            if (finalRotation < 0.0f) finalRotation += 360.0f;
 
             TextElement element = new TextElement(
                     formattedString,
-                    box.x1,
-                    box.y1,
+                    localX,
+                    localY,
                     box.fontScale,
                     finalArgb,
                     finalRotation

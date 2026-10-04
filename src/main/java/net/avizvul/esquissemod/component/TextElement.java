@@ -6,18 +6,18 @@ import io.netty.buffer.ByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
 
-public record TextElement(String text, int x, int y, float scale, int color, int rotation) {
+public record TextElement(String text, int x, int y, float scale, int color, float rotation) {
 
     public TextElement(String text, int x, int y, float scale, int color) {
-        this(text, x, y, scale, color, 0);
+        this(text, x, y, scale, color, 0.0f);
     }
 
     public TextElement(String text, int x, int y, float scale, int color, boolean isVertical) {
-        this(text, x, y, scale, color, isVertical ? 1 : 0);
+        this(text, x, y, scale, color, isVertical ? 90.0f : 0.0f);
     }
 
     public boolean isVertical() {
-        return this.rotation % 2 != 0;
+        return Math.abs(this.rotation % 180.0f - 90.0f) < 1.0f;
     }
 
     public static final Codec<TextElement> CODEC = RecordCodecBuilder.create(instance ->
@@ -27,7 +27,7 @@ public record TextElement(String text, int x, int y, float scale, int color, int
                     Codec.INT.fieldOf("y").forGetter(TextElement::y),
                     Codec.FLOAT.fieldOf("scale").forGetter(TextElement::scale),
                     Codec.INT.fieldOf("color").forGetter(TextElement::color),
-                    Codec.INT.optionalFieldOf("rotation", 0).forGetter(TextElement::rotation)
+                    Codec.FLOAT.optionalFieldOf("rotation", 0.0f).forGetter(TextElement::rotation)
             ).apply(instance, TextElement::new)
     );
 
@@ -37,7 +37,7 @@ public record TextElement(String text, int x, int y, float scale, int color, int
             ByteBufCodecs.INT, TextElement::y,
             ByteBufCodecs.FLOAT, TextElement::scale,
             ByteBufCodecs.INT, TextElement::color,
-            ByteBufCodecs.INT, TextElement::rotation,
+            ByteBufCodecs.FLOAT, TextElement::rotation,
             TextElement::new
     );
 }

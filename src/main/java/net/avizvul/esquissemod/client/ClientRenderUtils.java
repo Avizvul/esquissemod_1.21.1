@@ -14,13 +14,16 @@ public class ClientRenderUtils {
     public static void renderCachedSketch(GuiGraphics guiGraphics, SketchData data, int startX, int startY, int drawWidth, int drawHeight) {
         if (data == null || data.isEmpty()) return;
 
-        // 1. Отрисовка пиксельной текстуры рисунка
+        // 1. Рисунок
         ResourceLocation texture = SketchTextureCache.getOrCreateTexture(data);
         if (texture != null) {
             guiGraphics.blit(texture, startX, startY, 0.0f, 0.0f, drawWidth, drawHeight, drawWidth, drawHeight);
         }
 
-        // 2. Прямая векторная отрисовка текста поверх рисунка
+        // 2. Ограничение области обрезки (Scissor) по границам холста страницы
+        guiGraphics.enableScissor(startX, startY, startX + drawWidth, startY + drawHeight);
+
+        // 3. Текст с обрезкой
         List<TextElement> textElements = data.getTextElements();
         if (textElements != null && !textElements.isEmpty()) {
             Font font = Minecraft.getInstance().font;
@@ -45,5 +48,7 @@ public class ClientRenderUtils {
                 }
             }
         }
+
+        guiGraphics.disableScissor();
     }
 }

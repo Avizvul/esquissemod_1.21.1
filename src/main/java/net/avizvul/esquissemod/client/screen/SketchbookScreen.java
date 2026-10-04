@@ -100,6 +100,7 @@ public class SketchbookScreen extends Screen {
     private static double savedRulerY = -1;
     private static float savedRulerAngle = 0.0f;
     private static boolean wasRulerActive = false;
+    private static final double rulerHoverPadding = 12.0;
 
     private boolean isMagnifyingMode = false;
     private boolean isMagnifierLocked = false;
@@ -772,13 +773,47 @@ public class SketchbookScreen extends Screen {
 
         // === ОТРИСОВКА ВИЗУАЛА ЛИНЕЙКИ ===
         if (this.isRulerActive) {
+            // 1. Расчёт локальных координат мыши относительно центра и угла линейки
+            double dx = mouseX - this.rulerX;
+            double dy = mouseY - this.rulerY;
+            double rad = Math.toRadians(-this.rulerAngle);
+            double localX = dx * Math.cos(rad) - dy * Math.sin(rad);
+            double localY = dx * Math.sin(rad) + dy * Math.cos(rad);
+
+            // 2. Обособленная проверка наведения через rulerHoverPadding
+            boolean isHovered = Math.abs(localX) <= (this.rulerWidth / 2.0 + rulerHoverPadding) &&
+                    localY >= -rulerHoverPadding &&
+                    localY <= (this.rulerHeight + rulerHoverPadding);
+
+            // 3. При наведении на расширенную зону задаём прозрачность (45% Alpha)
+            float alpha = isHovered ? 0.45f : 1.0f;
+
             guiGraphics.pose().pushPose();
             guiGraphics.pose().translate(this.rulerX, this.rulerY, 0);
             guiGraphics.pose().mulPose(com.mojang.math.Axis.ZP.rotationDegrees(this.rulerAngle));
+
+            com.mojang.blaze3d.systems.RenderSystem.enableBlend();
+            com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, alpha);
+
             guiGraphics.pose().translate(-this.rulerWidth / 2.0, 0, 0);
-            guiGraphics.blit(RULER_TEX, 0, 0, this.rulerWidth, this.rulerHeight, 0.0f, 0.0f, this.rulerWidth, this.rulerHeight, this.rulerWidth, this.rulerHeight);
+            guiGraphics.blit(
+                    RULER_TEX,
+                    0,
+                    0,
+                    this.rulerWidth,
+                    this.rulerHeight,
+                    0.0f,
+                    0.0f,
+                    this.rulerWidth,
+                    this.rulerHeight,
+                    this.rulerWidth,
+                    this.rulerHeight
+            );
+
+            com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
             guiGraphics.pose().popPose();
         }
+
 
         // === ОТРИСОВКА ВИЗУАЛА ЦИРКУЛЯ ===
         if (this.compassState != CompassState.INACTIVE) {

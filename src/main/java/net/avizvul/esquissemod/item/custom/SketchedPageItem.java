@@ -89,11 +89,11 @@ public class SketchedPageItem extends Item {
     }
 
     // 1. Метод для обычного текста (как в уроках)
-    @Override
-    public void appendHoverText(ItemStack stack, TooltipContext context, java.util.List<net.minecraft.network.chat.Component> tooltipComponents, net.minecraft.world.item.TooltipFlag tooltipFlag) {
-        // Добавляем серый текст-подсказку
-        tooltipComponents.add(net.minecraft.network.chat.Component.translatable("item.esquissemod.sketched_page.tooltip").withStyle(net.minecraft.ChatFormatting.GRAY));
-    }
+    // @Override
+    // public void appendHoverText(ItemStack stack, TooltipContext context, java.util.List<net.minecraft.network.chat.Component> tooltipComponents, net.minecraft.world.item.TooltipFlag tooltipFlag) {
+    //     // Добавляем серый текст-подсказку
+    //     tooltipComponents.add(net.minecraft.network.chat.Component.translatable("item.esquissemod.sketched_page.tooltip").withStyle(net.minecraft.ChatFormatting.GRAY));
+    // }
 
     // 2. Метод для передачи картинки (Возвращаем наш новый класс)
     @Override

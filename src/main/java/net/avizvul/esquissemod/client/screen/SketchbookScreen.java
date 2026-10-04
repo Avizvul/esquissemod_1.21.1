@@ -540,8 +540,7 @@ public class SketchbookScreen extends Screen {
             int screenHeight = this.canvasHeight * this.scale;
             guiGraphics.blit(this.activeCanvasId, canvasScreenLeft, canvasScreenTop, 0.0f, 0.0f, screenWidth, screenHeight, screenWidth, screenHeight);
 
-            net.avizvul.esquissemod.client.StencilBufferUtils.beginMask(guiGraphics, cx, cy, this.rotationAngle, () -> {
-                // Рисуем область маски (ровно прямоугольник повернутой страницы)
+            net.avizvul.esquissemod.client.StencilBufferUtils.beginMask(guiGraphics, () -> {
                 guiGraphics.fill(canvasScreenLeft, renderY, canvasScreenLeft + screenWidth, renderY + screenHeight, 0xFFFFFFFF);
             });
 
@@ -553,8 +552,6 @@ public class SketchbookScreen extends Screen {
 
             if (this.textElements != null && !this.textElements.isEmpty()) {
                 double pCell = (double) this.scale / this.resolutionMultiplier;
-                // Динамический расчёт экранной прямоугольной области обрезки (Scissor)
-                // с учётом поворота скетчбука (this.rotationAngle)
                 int paperX1 = canvasScreenLeft;
                 int paperY1 = renderY;
                 int paperX2 = canvasScreenLeft + (this.canvasWidth * this.scale);
@@ -609,7 +606,7 @@ public class SketchbookScreen extends Screen {
                     }
                 }
             }
-            net.avizvul.esquissemod.client.StencilBufferUtils.endMask();
+            net.avizvul.esquissemod.client.StencilBufferUtils.endMask(guiGraphics);
             com.mojang.blaze3d.systems.RenderSystem.disableBlend();
         }
 

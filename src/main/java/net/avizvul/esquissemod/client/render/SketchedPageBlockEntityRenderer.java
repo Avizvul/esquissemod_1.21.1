@@ -6,17 +6,12 @@ import net.avizvul.esquissemod.EsquisseMod;
 import net.avizvul.esquissemod.block.SketchedPageBlock;
 import net.avizvul.esquissemod.block.entity.SketchedPageBlockEntity;
 import net.avizvul.esquissemod.component.SketchData;
-import net.avizvul.esquissemod.component.TextElement;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.Font;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
 import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider;
 import net.minecraft.core.Direction;
 import net.minecraft.resources.ResourceLocation;
-
-import java.util.List;
 
 public class SketchedPageBlockEntityRenderer implements BlockEntityRenderer<SketchedPageBlockEntity> {
 
@@ -65,42 +60,11 @@ public class SketchedPageBlockEntityRenderer implements BlockEntityRenderer<Sket
         VertexConsumer bgConsumer = bufferSource.getBuffer(RenderType.entityCutout(PAGE_TEX));
         drawQuad(pose, bgConsumer, 0, 0, 0.0f, 126, 192, 0.0f, 0.0f, 1.0f, 1.0f, 0xFFFFFFFF, packedLight);
 
-        // 2. Пиксельный рисунок
+        // 2. Рисунок вместе с запеченным текстом (Всего 1 Quad!)
         ResourceLocation sketchTexture = net.avizvul.esquissemod.client.SketchTextureCache.getOrCreateTexture(data);
         if (sketchTexture != null) {
             VertexConsumer pixelConsumer = bufferSource.getBuffer(RenderType.entityTranslucentCull(sketchTexture));
             drawQuad(pose, pixelConsumer, 0, 0, -1.0f, 126, 192, 0.0f, 0.0f, 1.0f, 1.0f, 0xFFFFFFFF, packedLight);
-        }
-
-        // 3. Векторный текст на 3D блоке (единая логика)
-        List<TextElement> texts = data.getTextElements();
-        if (texts != null && !texts.isEmpty()) {
-            Font font = Minecraft.getInstance().font;
-            for (TextElement elem : texts) {
-                String[] lines = elem.text().split("\n", -1);
-                for (int l = 0; l < lines.length; l++) {
-                    if (lines[l].isEmpty()) continue;
-                    poseStack.pushPose();
-                    poseStack.translate(elem.x(), elem.y(), -1.5f);
-                    if (elem.rotation() != 0.0f) {
-                        poseStack.mulPose(com.mojang.math.Axis.ZP.rotationDegrees(elem.rotation()));
-                    }
-                    poseStack.scale(elem.scale(), elem.scale(), 1.0f);
-                    font.drawInBatch(
-                            lines[l],
-                            0,
-                            l * 9,
-                            elem.color(),
-                            false,
-                            poseStack.last().pose(),
-                            bufferSource,
-                            Font.DisplayMode.NORMAL,
-                            0,
-                            packedLight
-                    );
-                    poseStack.popPose();
-                }
-            }
         }
 
         poseStack.popPose();

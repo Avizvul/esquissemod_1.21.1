@@ -5,9 +5,6 @@ import net.avizvul.esquissemod.component.TextElement;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
-import net.minecraft.util.FormattedCharSequence;
 
 import java.util.List;
 
@@ -17,7 +14,7 @@ public class ClientRenderUtils {
         if (data == null || data.isEmpty()) return;
 
         // 1. Отрисовка растра
-        ResourceLocation texture = SketchTextureCache.getOrCreateTexture(data);
+        net.minecraft.resources.ResourceLocation texture = SketchTextureCache.getOrCreateTexture(data);
         if (texture != null) {
             guiGraphics.blit(texture, startX, startY, 0.0f, 0.0f, drawWidth, drawHeight, drawWidth, drawHeight);
         }
@@ -35,19 +32,17 @@ public class ClientRenderUtils {
                 int elemX = startX + (int) ((elem.x() + 2) * scaleX);
                 int elemY = startY + (int) ((elem.y() + 2) * scaleY);
 
-                Component comp = Component.literal(elem.text());
-                int maxW = Math.max(10, (int) ((125 - elem.x() - 2) * scaleX / elem.scale()));
-                List<FormattedCharSequence> lines = font.split(comp, maxW);
-                int lineH = (int) (9 * elem.scale() * scaleY);
+                String[] lines = elem.text().split("\n", -1);
 
-                for (int l = 0; l < lines.size(); l++) {
+                for (int l = 0; l < lines.length; l++) {
+                    if (lines[l].isEmpty()) continue;
                     guiGraphics.pose().pushPose();
-                    guiGraphics.pose().translate(elemX, elemY + l * lineH, 0);
+                    guiGraphics.pose().translate(elemX, elemY, 0);
                     if (elem.rotation() != 0.0f) {
                         guiGraphics.pose().mulPose(com.mojang.math.Axis.ZP.rotationDegrees(elem.rotation()));
                     }
                     guiGraphics.pose().scale(elem.scale() * (float) scaleX, elem.scale() * (float) scaleY, 1.0f);
-                    guiGraphics.drawString(font, lines.get(l), 0, 0, elem.color(), false);
+                    guiGraphics.drawString(font, lines[l], 0, l * 9, elem.color(), false);
                     guiGraphics.pose().popPose();
                 }
             }

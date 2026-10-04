@@ -537,29 +537,65 @@ public class SketchbookScreen extends Screen {
 
             if (this.textElements != null && !this.textElements.isEmpty()) {
                 double pCell = (double) this.scale / this.resolutionMultiplier;
+                // Динамический расчёт экранной прямоугольной области обрезки (Scissor)
+                // с учётом поворота скетчбука (this.rotationAngle)
+                int paperX1 = canvasScreenLeft;
+                int paperY1 = renderY;
+                int paperX2 = canvasScreenLeft + (this.canvasWidth * this.scale);
+                int paperY2 = renderY + (this.canvasHeight * this.scale);
 
-                // Включаем scissor обрезку по границам бумаги
-                guiGraphics.enableScissor(canvasScreenLeft, renderY, canvasScreenLeft + (this.canvasWidth * this.scale), renderY + (this.canvasHeight * this.scale));
+                double rad = Math.toRadians(this.rotationAngle);
+                double cos = Math.cos(rad);
+                double sin = Math.sin(rad);
 
-                for (TextElement elem : this.textElements) {
-                    int elemX = canvasScreenLeft + (int) ((elem.x() + 2) * pCell);
-                    int elemY = renderY + (int) ((elem.y() + 2) * pCell);
+                double[] px = new double[] { paperX1, paperX2, paperX2, paperX1 };
+                double[] py = new double[] { paperY1, paperY1, paperY2, paperY2 };
 
-                    float renderScale = (float) (elem.scale() * pCell);
-                    String[] lines = elem.text().split("\n", -1);
+                double minX = Double.MAX_VALUE, minY = Double.MAX_VALUE;
+                double maxX = -Double.MAX_VALUE, maxY = -Double.MAX_VALUE;
 
-                    for (int l = 0; l < lines.length; l++) {
-                        if (lines[l].isEmpty()) continue;
-                        guiGraphics.pose().pushPose();
-                        guiGraphics.pose().translate(elemX, elemY, 0);
-                        if (elem.rotation() != 0.0f) {
-                            guiGraphics.pose().mulPose(com.mojang.math.Axis.ZP.rotationDegrees(elem.rotation()));
+                for (int i = 0; i < 4; i++) {
+                    double dx = px[i] - cx;
+                    double dy = py[i] - cy;
+                    double rx = cx + (dx * cos - dy * sin);
+                    double ry = cy + (dx * sin + dy * cos);
+                    if (rx < minX) minX = rx;
+                    if (rx > maxX) maxX = rx;
+                    if (ry < minY) minY = ry;
+                    if (ry > maxY) maxY = ry;
+                }
+
+                int clipX1 = (int) Math.floor(minX);
+                int clipY1 = (int) Math.floor(minY);
+                int clipX2 = (int) Math.ceil(maxX);
+                int clipY2 = (int) Math.ceil(maxY);
+
+// Включаем динамический Scissor
+                guiGraphics.enableScissor(clipX1, clipY1, clipX2, clipY2);
+
+                if (this.textElements != null && !this.textElements.isEmpty()) {
+
+                    for (TextElement elem : this.textElements) {
+                        int elemX = canvasScreenLeft + (int) (elem.x() * pCell);
+                        int elemY = renderY + (int) (elem.y() * pCell);
+
+                        float renderScale = (float) (elem.scale() * pCell);
+                        String[] lines = elem.text().split("\n", -1);
+
+                        for (int l = 0; l < lines.length; l++) {
+                            if (lines[l].isEmpty()) continue;
+                            guiGraphics.pose().pushPose();
+                            guiGraphics.pose().translate(elemX, elemY, 0);
+                            if (elem.rotation() != 0.0f) {
+                                guiGraphics.pose().mulPose(com.mojang.math.Axis.ZP.rotationDegrees(elem.rotation()));
+                            }
+                            guiGraphics.pose().scale(renderScale, renderScale, 1.0f);
+                            guiGraphics.drawString(this.font, lines[l], 0, l * 9, elem.color(), false);
+                            guiGraphics.pose().popPose();
                         }
-                        guiGraphics.pose().scale(renderScale, renderScale, 1.0f);
-                        guiGraphics.drawString(this.font, lines[l], 0, l * 9, elem.color(), false);
-                        guiGraphics.pose().popPose();
                     }
                 }
+
 
                 guiGraphics.disableScissor();
             }
@@ -2508,17 +2544,27 @@ public class SketchbookScreen extends Screen {
             };
             int finalArgb = (alpha << 24) | baseRgb;
 
+            // Вычисляем экранную точку начала текста в зависимости от угла поворота рамки
+            int cornerScreenX = switch (rotStep) {
+                case 1, 2 -> screenX2 - 2;
+                default -> screenX1 + 2;
+            };
+            int cornerScreenY = switch (rotStep) {
+                case 2, 3 -> screenY2 - 2;
+                default -> screenY1 + 2;
+            };
+
             // Центр скетчбука на экране
             double cx = renderX + drawWidth / 2.0;
             double cy = renderY + drawHeight / 2.0;
 
-            // Обратный пересчёт координат в локальную систему листа
+            // Обратный пересчёт экранной точки начала текста в локальные координаты холста
             double rad = Math.toRadians(-this.rotationAngle);
             double cos = Math.cos(rad);
             double sin = Math.sin(rad);
 
-            double dx = screenX1 - cx;
-            double dy = screenY1 - cy;
+            double dx = cornerScreenX - cx;
+            double dy = cornerScreenY - cy;
 
             double unrotatedX = cx + (dx * cos - dy * sin);
             double unrotatedY = cy + (dx * sin + dy * cos);
@@ -2527,7 +2573,7 @@ public class SketchbookScreen extends Screen {
             int localY = (int) Math.round((unrotatedY - renderY) / pCell);
 
             // Расчет точного относительного угла
-            float textScreenAngle = (box.rotation % 4) * 90.0f;
+            float textScreenAngle = rotStep * 90.0f;
             float finalRotation = (textScreenAngle - this.rotationAngle) % 360.0f;
             if (finalRotation < 0.0f) finalRotation += 360.0f;
 

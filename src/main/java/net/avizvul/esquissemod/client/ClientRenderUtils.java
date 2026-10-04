@@ -29,8 +29,8 @@ public class ClientRenderUtils {
             guiGraphics.enableScissor(startX, startY, startX + drawWidth, startY + drawHeight);
 
             for (TextElement elem : texts) {
-                int elemX = startX + (int) ((elem.x() + 2) * scaleX);
-                int elemY = startY + (int) ((elem.y() + 2) * scaleY);
+                int elemX = startX + (int) (elem.x() * scaleX);
+                int elemY = startY + (int) (elem.y() * scaleY);
 
                 String[] lines = elem.text().split("\n", -1);
 

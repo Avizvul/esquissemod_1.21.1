@@ -14,9 +14,7 @@ import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
 import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider;
 import net.minecraft.core.Direction;
-import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.util.FormattedCharSequence;
 
 import java.util.List;
 
@@ -74,22 +72,22 @@ public class SketchedPageBlockEntityRenderer implements BlockEntityRenderer<Sket
             drawQuad(pose, pixelConsumer, 0, 0, -1.0f, 126, 192, 0.0f, 0.0f, 1.0f, 1.0f, 0xFFFFFFFF, packedLight);
         }
 
-        // 3. Векторный текст на 3D блоке
+        // 3. Векторный текст на 3D блоке (единая логика)
         List<TextElement> texts = data.getTextElements();
         if (texts != null && !texts.isEmpty()) {
             Font font = Minecraft.getInstance().font;
             for (TextElement elem : texts) {
-                poseStack.pushPose();
-                poseStack.translate(elem.x() + 2, elem.y() + 2, -1.5f);
-                poseStack.scale(elem.scale(), elem.scale(), 1.0f);
-
-                Component comp = Component.literal(elem.text());
-                int maxW = Math.max(10, (int) ((125 - elem.x()) / elem.scale()));
-                List<FormattedCharSequence> lines = font.split(comp, maxW);
-
-                for (int l = 0; l < lines.size(); l++) {
+                String[] lines = elem.text().split("\n", -1);
+                for (int l = 0; l < lines.length; l++) {
+                    if (lines[l].isEmpty()) continue;
+                    poseStack.pushPose();
+                    poseStack.translate(elem.x(), elem.y(), -1.5f);
+                    if (elem.rotation() != 0.0f) {
+                        poseStack.mulPose(com.mojang.math.Axis.ZP.rotationDegrees(elem.rotation()));
+                    }
+                    poseStack.scale(elem.scale(), elem.scale(), 1.0f);
                     font.drawInBatch(
-                            lines.get(l),
+                            lines[l],
                             0,
                             l * 9,
                             elem.color(),
@@ -100,8 +98,8 @@ public class SketchedPageBlockEntityRenderer implements BlockEntityRenderer<Sket
                             0,
                             packedLight
                     );
+                    poseStack.popPose();
                 }
-                poseStack.popPose();
             }
         }
 

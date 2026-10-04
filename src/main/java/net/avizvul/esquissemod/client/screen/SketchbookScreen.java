@@ -540,6 +540,17 @@ public class SketchbookScreen extends Screen {
             int screenHeight = this.canvasHeight * this.scale;
             guiGraphics.blit(this.activeCanvasId, canvasScreenLeft, canvasScreenTop, 0.0f, 0.0f, screenWidth, screenHeight, screenWidth, screenHeight);
 
+            net.avizvul.esquissemod.client.StencilBufferUtils.beginMask(guiGraphics, cx, cy, this.rotationAngle, () -> {
+                // Рисуем область маски (ровно прямоугольник повернутой страницы)
+                guiGraphics.fill(canvasScreenLeft, renderY, canvasScreenLeft + screenWidth, renderY + screenHeight, 0xFFFFFFFF);
+            });
+
+            // 2. Поворачиваем матрицу рендера текста на угол скетчбука
+            guiGraphics.pose().pushPose();
+            guiGraphics.pose().translate(cx, cy, 0);
+            guiGraphics.pose().mulPose(com.mojang.math.Axis.ZP.rotationDegrees(this.rotationAngle));
+            guiGraphics.pose().translate(-cx, -cy, 0);
+
             if (this.textElements != null && !this.textElements.isEmpty()) {
                 double pCell = (double) this.scale / this.resolutionMultiplier;
                 // Динамический расчёт экранной прямоугольной области обрезки (Scissor)
@@ -575,9 +586,6 @@ public class SketchbookScreen extends Screen {
                 int clipX2 = (int) Math.ceil(maxX);
                 int clipY2 = (int) Math.ceil(maxY);
 
-// Включаем динамический Scissor
-                guiGraphics.enableScissor(clipX1, clipY1, clipX2, clipY2);
-
                 if (this.textElements != null && !this.textElements.isEmpty()) {
 
                     for (TextElement elem : this.textElements) {
@@ -600,11 +608,8 @@ public class SketchbookScreen extends Screen {
                         }
                     }
                 }
-
-
-                guiGraphics.disableScissor();
             }
-
+            net.avizvul.esquissemod.client.StencilBufferUtils.endMask();
             com.mojang.blaze3d.systems.RenderSystem.disableBlend();
         }
 
@@ -786,7 +791,7 @@ public class SketchbookScreen extends Screen {
                     localY <= (this.rulerHeight + rulerHoverPadding);
 
             // 3. При наведении на расширенную зону задаём прозрачность (45% Alpha)
-            float alpha = isHovered ? 0.45f : 1.0f;
+            float alpha = isHovered ? 0.15f : 1.0f;
 
             guiGraphics.pose().pushPose();
             guiGraphics.pose().translate(this.rulerX, this.rulerY, 0);

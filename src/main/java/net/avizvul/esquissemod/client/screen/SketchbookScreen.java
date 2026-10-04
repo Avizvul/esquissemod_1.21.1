@@ -128,6 +128,7 @@ public class SketchbookScreen extends Screen {
     private boolean isTextBoxResizing = false;       // Флаг изменения размера текстового поля зажатием
     private boolean isTextSelectingWithMouse = false;
     private double textBoxDragStartX, textBoxDragStartY;
+    private boolean isTextCreatingWithDrag = false;
 
 
     boolean hasShift = Screen.hasShiftDown();
@@ -1362,6 +1363,9 @@ public class SketchbookScreen extends Screen {
         int eraserX = toolCoords.eraserX();
         int smudgeX = toolCoords.smudgeX();
         int kneadedX = toolCoords.kneadedX();
+        int rulerX = toolCoords.rulerX();
+        int magGlassX = toolCoords.magGlassX();
+        int compassX = toolCoords.compassX();
         int peekY = toolCoords.peekY();
 
         int btnFileWidth = 8;
@@ -2048,6 +2052,7 @@ public class SketchbookScreen extends Screen {
 //_________________________________________________________________________________
 
     private int getCharIndexAtMouse(TextBoxState box, int screenX1, int screenY1, int screenX2, double mouseX, double mouseY) {
+        int renderY = (int) this.exactGuiTop;
         double pCell = (double) this.scale / this.resolutionMultiplier;
         float renderScale = (float) (box.fontScale * pCell);
 

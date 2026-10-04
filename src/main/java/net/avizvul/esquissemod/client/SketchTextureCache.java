@@ -57,7 +57,7 @@ public class SketchTextureCache {
             }
         }
 
-        // 2. Если есть векторный текст — запекаем его поверх рисунка с обрезкой 126x192
+        // 2. Запекаем векторный текст поверх рисунка
         List<TextElement> textElements = data.getTextElements();
         if (textElements != null && !textElements.isEmpty()) {
             rasterizeTextOntoImage(image, textElements, w, h);
@@ -107,8 +107,10 @@ public class SketchTextureCache {
                 }
             }
 
-            guiGraphics.flush();
             guiGraphics.pose().popPose();
+
+            // ВАЖНО: Принудительный сброс буфера отрисовки перед скачиванием текстуры!
+            mc.renderBuffers().bufferSource().endBatch();
 
             NativeImage textImage = new NativeImage(width, height, false);
             RenderSystem.bindTexture(target.getColorTextureId());
@@ -119,7 +121,7 @@ public class SketchTextureCache {
             RenderSystem.viewport(0, 0, mc.getWindow().getWidth(), mc.getWindow().getHeight());
             target.destroyBuffers();
 
-            // Попиксельное альфа-смешивание запечённого текста с рисунком
+            // Альфа-смешивание запечённого текста с рисунком
             for (int x = 0; x < width; x++) {
                 for (int y = 0; y < height; y++) {
                     int textAbgr = textImage.getPixelRGBA(x, y);

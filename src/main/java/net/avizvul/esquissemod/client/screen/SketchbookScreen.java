@@ -1750,7 +1750,7 @@ public class SketchbookScreen extends Screen {
         int renderY = (int) this.exactGuiTop;
         int canvasScreenLeft = renderX + ((this.frameWidth + this.deadZoneWidth) * this.scale);
 
-        // 1. Перемещение скетчбука по экрану
+        // 1. Перемещение скетчбука
         if (this.isDragging) {
             this.exactGuiLeft += dragX;
             this.exactGuiTop += dragY;
@@ -1758,13 +1758,12 @@ public class SketchbookScreen extends Screen {
             return true;
         }
 
-        // 2. Вращение скетчбука мышью (Исправлен знак: - dragX вращает по направлению мыши)
+        // 2. Вращение скетчбука
         if (this.isRotating) {
             int drawWidth = this.fileWidth * this.scale;
             int drawHeight = this.fileHeight * this.scale;
             double cx = renderX + drawWidth / 2.0;
             double cy = renderY + drawHeight / 2.0;
-
             double currentMouseAngle = Math.toDegrees(Math.atan2(mouseY - cy, mouseX - cx));
             double deltaAngle = currentMouseAngle - this.rotationDragStartMouseAngle;
             this.rotationAngle = (float) ((this.rotationDragStartAngle + deltaAngle) % 360.0);
@@ -1773,16 +1772,13 @@ public class SketchbookScreen extends Screen {
             return true;
         }
 
-
         // 3. Перемещение текстовой рамки
         if (this.isTextBoxDragging && this.activeTextBox != null) {
             double pCell = (double) this.scale / this.resolutionMultiplier;
             int newX1 = (int) ((mouseX - this.textBoxDragStartX - canvasScreenLeft) / pCell);
             int newY1 = (int) ((mouseY - this.textBoxDragStartY - renderY) / pCell);
-
             int w = this.activeTextBox.getWidth();
             int h = this.activeTextBox.getHeight();
-
             this.activeTextBox.x1 = newX1;
             this.activeTextBox.y1 = newY1;
             this.activeTextBox.x2 = newX1 + w;
@@ -1795,10 +1791,40 @@ public class SketchbookScreen extends Screen {
             double pCell = (double) this.scale / this.resolutionMultiplier;
             int currentX2 = (int) ((mouseX - canvasScreenLeft) / pCell);
             int currentY2 = (int) ((mouseY - renderY) / pCell);
-
             this.activeTextBox.x2 = Math.max(this.activeTextBox.x1 + 10, currentX2);
             this.activeTextBox.y2 = Math.max(this.activeTextBox.y1 + 10, currentY2);
             this.activeTextBox.updateText();
+            return true;
+        }
+
+        // 5. Перемещение линейки мышью
+        if (this.isRulerDragging) {
+            this.rulerX += dragX;
+            this.rulerY += dragY;
+            return true;
+        }
+
+        // 6. Вращение линейки мышью (Shift + перетаскивание)
+        if (this.isRulerRotating) {
+            double currentAngle = Math.toDegrees(Math.atan2(mouseY - this.rulerY, mouseX - this.rulerX));
+            this.rulerAngle = (float) ((currentAngle - this.rulerAngleOffset) % 360.0);
+            return true;
+        }
+
+        // 7. Непрерывное рисование и стирание кистью при зажатой ЛКМ
+        if (button == 0 && (this.isDrawing || this.isErasing)) {
+            double[] magnetMouse = applyRulerMagnet(mouseX, mouseY);
+            double[] drawLogical = getLogicalMouse(magnetMouse[0], magnetMouse[1]);
+
+            if (this.compassState == CompassState.LOCKED) {
+                double angle = Math.atan2(drawLogical[1] - this.compassAnchorY, drawLogical[0] - this.compassAnchorX);
+                drawLogical[0] = this.compassAnchorX + this.compassRadius * Math.cos(angle);
+                drawLogical[1] = this.compassAnchorY + this.compassRadius * Math.sin(angle);
+            }
+
+            drawPixel(drawLogical[0], drawLogical[1]);
+            this.lastLogicalX = drawLogical[0];
+            this.lastLogicalY = drawLogical[1];
             return true;
         }
 

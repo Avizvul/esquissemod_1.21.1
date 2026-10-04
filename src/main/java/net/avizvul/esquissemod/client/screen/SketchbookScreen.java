@@ -130,45 +130,8 @@ public class SketchbookScreen extends Screen {
     private double textBoxDragStartX, textBoxDragStartY;
 
 
-    private int getCharIndexAtMouse(TextBoxState box, int screenX1, int screenY1, int screenX2, double mouseX, double mouseY) {
-        double pCell = (double) this.scale / this.resolutionMultiplier;
-        float renderScale = (float) (box.fontScale * pCell);
-
-        int maxW = Math.max(10, (int) ((screenX2 - screenX1 - 4) / renderScale));
-        java.util.List<TextBoxState.TextLine> lines = box.getWrappedLines(this.font, maxW);
-
-        double relativeY = (mouseY - (screenY1 + 2)) / renderScale;
-        int lineIdx = (int) (relativeY / 9.0);
-        lineIdx = Math.max(0, Math.min(lines.size() - 1, lineIdx));
-
-        TextBoxState.TextLine targetLine = lines.get(lineIdx);
-        double relativeX = (mouseX - (screenX1 + 2)) / renderScale;
-
-        if (relativeX <= 0) {
-            return targetLine.startCharIndex;
-        }
-
-        int bestIndex = targetLine.startCharIndex;
-        double minDiff = Double.MAX_VALUE;
-
-        for (int i = targetLine.startCharIndex; i <= targetLine.endCharIndex; i++) {
-            String sub = box.getFormattedSubstring(targetLine.startCharIndex, i);
-            int widthSoFar = this.font.width(sub);
-            double diff = Math.abs(relativeX - widthSoFar);
-
-            if (diff < minDiff) {
-                minDiff = diff;
-                bestIndex = i;
-            }
-        }
-
-        return bestIndex;
-    }
-
-
     boolean hasShift = Screen.hasShiftDown();
     boolean hasCtrl = Screen.hasControlDown();
-
 
 
     private net.minecraft.world.item.ItemStack getColorMarkerStack() {
@@ -477,11 +440,12 @@ public class SketchbookScreen extends Screen {
             this.rulerAngle = (float) Math.toDegrees(Math.atan2(mouseY - this.quickRulerStartY, mouseX - this.quickRulerStartX));
         }
 
-        // 1. Предварительное вычисление базовых координат GUI и холста
+        // 1. Вычисление базовых координат GUI и холста
         int renderX = (int) this.exactGuiLeft;
         int renderY = (int) this.exactGuiTop;
         int drawWidth = this.fileWidth * this.scale;
         int drawHeight = this.fileHeight * this.scale;
+
         int canvasScreenLeft = renderX + ((this.frameWidth + this.deadZoneWidth) * this.scale);
         int canvasScreenTop = renderY;
 
@@ -501,69 +465,62 @@ public class SketchbookScreen extends Screen {
         double cx = renderX + drawWidth / 2.0;
         double cy = renderY + drawHeight / 2.0;
 
+        // =========================================================================
+        // НАЧАЛО МАТРИЦЫ ПОВОРОТА ХОЛСТА (Всё внутри вращается вместе со скетчбуком)
+        // =========================================================================
         guiGraphics.pose().pushPose();
         guiGraphics.pose().translate(cx, cy, 0);
-
         if (this.rotationAngle != 0.0f) {
             guiGraphics.pose().mulPose(com.mojang.math.Axis.ZP.rotationDegrees(this.rotationAngle));
         }
-
         guiGraphics.pose().translate(-cx, -cy, 0);
 
         int scaledTabWidth = this.tabWidth * this.tabScale;
         int scaledTabHeight = this.tabHeight * this.tabScale;
-
         TabCoords coords = getTabCoords(renderX, renderY, drawWidth);
 
-        int tabX = coords.tabX();
-        int backTabY = coords.backTabY();
-        int forwardTabY = coords.forwardTabY();
-
-        double[] logicalMouse = getLogicalMouse(mouseX, mouseY);
-
-        double lMouseX = logicalMouse[0];
-        double lMouseY = logicalMouse[1];
-
+        // Отрисовка вкладок перелистывания (Назад / Вперед)
         if (this.currentPageIndex > 0) {
-            boolean backHovered = !this.isDragging && !this.isRotating && lMouseX >= tabX && lMouseX < tabX + scaledTabWidth && lMouseY >= backTabY && lMouseY < backTabY + scaledTabHeight;
+        double[] lMouse = getLogicalMouse(mouseX, mouseY);
+            boolean backHovered = !this.isDragging && !this.isRotating && lMouse[0] >= coords.tabX() && lMouse[0] < coords.tabX() + scaledTabWidth && lMouse[1] >= coords.backTabY() && lMouse[1] < coords.backTabY() + scaledTabHeight;
             float backVOffset = backHovered ? this.tabHeight : 0.0f;
-            guiGraphics.blit(PAGE_B_TEX, tabX, backTabY, scaledTabWidth, scaledTabHeight, 0.0f, backVOffset, this.tabWidth, this.tabHeight, this.tabWidth, this.tabHeight * 2);
+            guiGraphics.blit(PAGE_B_TEX, coords.tabX(), coords.backTabY(), scaledTabWidth, scaledTabHeight, 0.0f, backVOffset, this.tabWidth, this.tabHeight, this.tabWidth, this.tabHeight * 2);
         }
 
         if (this.currentPageIndex < 15) {
-            boolean forwardHovered = !this.isDragging && !this.isRotating && lMouseX >= tabX && lMouseX < tabX + scaledTabWidth && lMouseY >= forwardTabY && lMouseY < forwardTabY + scaledTabHeight;
+        double[] lMouse = getLogicalMouse(mouseX, mouseY);
+            boolean forwardHovered = !this.isDragging && !this.isRotating && lMouse[0] >= coords.tabX() && lMouse[0] < coords.tabX() + scaledTabWidth && lMouse[1] >= coords.forwardTabY() && lMouse[1] < coords.forwardTabY() + scaledTabHeight;
             float forwardVOffset = forwardHovered ? this.tabHeight : 0.0f;
-            guiGraphics.blit(PAGE_F_TEX, tabX, forwardTabY, scaledTabWidth, scaledTabHeight, 0.0f, forwardVOffset, this.tabWidth, this.tabHeight, this.tabWidth, this.tabHeight * 2);
+            guiGraphics.blit(PAGE_F_TEX, coords.tabX(), coords.forwardTabY(), scaledTabWidth, scaledTabHeight, 0.0f, forwardVOffset, this.tabWidth, this.tabHeight, this.tabWidth, this.tabHeight * 2);
         }
 
+        // Текстура основы альбома
         guiGraphics.blit(TEXTURE, renderX, renderY, drawWidth, drawHeight, 0.0f, 0.0f, this.fileWidth, this.fileHeight, this.fileWidth, this.fileHeight);
 
+        // Линия отрыва
         int blueZoneWidth = this.deadZoneWidth * this.scale;
         int blueZoneLeft = renderX + (this.frameWidth * this.scale);
         int blueZoneRight = blueZoneLeft + blueZoneWidth;
         int blueZoneTop = renderY;
         int blueZoneBottom = renderY + (this.canvasHeight * this.scale);
 
-        if (lMouseX >= blueZoneLeft && lMouseX <= blueZoneRight && lMouseY >= blueZoneTop && lMouseY <= blueZoneBottom) {
-            int dashLength = 5;
-            int dashGap = 3;
-            int lineWidth = 2;
-            int color = 0xFFEE0000;
+    double[] lMouseMain = getLogicalMouse(mouseX, mouseY);
+        if (lMouseMain[0] >= blueZoneLeft && lMouseMain[0] <= blueZoneRight && lMouseMain[1] >= blueZoneTop && lMouseMain[1] <= blueZoneBottom) {
+            int dashLength = 5, dashGap = 3, lineWidth = 2, color = 0xFFEE0000;
             int lineX = blueZoneLeft + (blueZoneWidth / 2) - (lineWidth / 2);
-
             for (int y = blueZoneTop; y < blueZoneBottom; y += dashLength + dashGap) {
                 int currentDashBottom = Math.min(y + dashLength, blueZoneBottom);
                 guiGraphics.fill(lineX, y, lineX + lineWidth, currentDashBottom, color);
             }
         }
 
-        int btnFileWidth = 8;
-        int btnFileHeight = 8;
+        // Кнопка вращения на корешке
+        int btnFileWidth = 8, btnFileHeight = 8;
         int btnX = renderX;
         int btnY = renderY + ((this.fileHeight - btnFileHeight) / 2) * this.scale;
-
         guiGraphics.blit(ROTATE_BTN_TEX, btnX, btnY, btnFileWidth * this.scale, btnFileHeight * this.scale, 0.0f, 0.0f, btnFileWidth, btnFileHeight, btnFileWidth, btnFileHeight);
 
+        // Отрисовка холста с пикселями
         if (this.isCanvasDirty) updateActiveCanvasTexture();
 
         if (this.activeCanvasId != null) {
@@ -571,7 +528,8 @@ public class SketchbookScreen extends Screen {
             int screenWidth = this.canvasWidth * this.scale;
             int screenHeight = this.canvasHeight * this.scale;
             guiGraphics.blit(this.activeCanvasId, canvasScreenLeft, canvasScreenTop, 0.0f, 0.0f, screenWidth, screenHeight, screenWidth, screenHeight);
-            // Отрисовка векторных элементов текущей страницы
+
+            // Отрисовка запечённых векторных элементов страницы
             if (this.textElements != null && !this.textElements.isEmpty()) {
                 double pCell = (double) this.scale / this.resolutionMultiplier;
 
@@ -583,22 +541,32 @@ public class SketchbookScreen extends Screen {
                     net.minecraft.network.chat.Component comp = net.minecraft.network.chat.Component.literal(elem.text());
                     int maxW = Math.max(10, (int) ((125 - elem.x() - 2) * pCell / renderScale));
                     java.util.List<net.minecraft.util.FormattedCharSequence> lines = this.font.split(comp, maxW);
-
                     int lineH = (int) (9 * renderScale);
 
-                    for (int l = 0; l < lines.size(); l++) {
-                        guiGraphics.pose().pushPose();
-                        guiGraphics.pose().translate(elemX, elemY + l * lineH, 0);
-                        guiGraphics.pose().scale(renderScale, renderScale, 1.0f);
-                        guiGraphics.drawString(this.font, lines.get(l), 0, 0, elem.color(), false);
-                        guiGraphics.pose().popPose();
+                    if (elem.isVertical()) {
+                        for (int l = 0; l < lines.size(); l++) {
+                            guiGraphics.pose().pushPose();
+                            guiGraphics.pose().translate(elemX - l * lineH, elemY, 0);
+                            guiGraphics.pose().mulPose(com.mojang.math.Axis.ZP.rotationDegrees(90f));
+                            guiGraphics.pose().scale(renderScale, renderScale, 1.0f);
+                            guiGraphics.drawString(this.font, lines.get(l), 0, 0, elem.color(), false);
+                            guiGraphics.pose().popPose();
+                        }
+                    } else {
+                        for (int l = 0; l < lines.size(); l++) {
+                            guiGraphics.pose().pushPose();
+                            guiGraphics.pose().translate(elemX, elemY + l * lineH, 0);
+                            guiGraphics.pose().scale(renderScale, renderScale, 1.0f);
+                            guiGraphics.drawString(this.font, lines.get(l), 0, 0, elem.color(), false);
+                            guiGraphics.pose().popPose();
+                        }
                     }
                 }
             }
-
             com.mojang.blaze3d.systems.RenderSystem.disableBlend();
         }
 
+        // Предпросмотр кисти под курсором
         guiGraphics.pose().pushPose();
         float resScale = 1.0f / this.resolutionMultiplier;
         guiGraphics.pose().scale(resScale, resScale, 1.0f);
@@ -608,7 +576,8 @@ public class SketchbookScreen extends Screen {
         int scaledCanvasWidth = this.canvasWidth * this.scale;
         int scaledImageHeight = this.fileHeight * this.scale;
 
-        if (!this.isDragging && !this.isRotating && lMouseX >= canvasScreenLeft && lMouseX < (canvasScreenLeft + scaledCanvasWidth) && lMouseY >= renderY && lMouseY < (renderY + scaledImageHeight)) {
+    double[] lMouseHover = getLogicalMouse(mouseX, mouseY);
+        if (!this.isDragging && !this.isRotating && lMouseHover[0] >= canvasScreenLeft && lMouseHover[0] < (canvasScreenLeft + scaledCanvasWidth) && lMouseHover[1] >= renderY && lMouseHover[1] < (renderY + scaledImageHeight)) {
             boolean canDraw = (this.activeTool == Tool.PENCIL && hasPencil) ||
                     (this.activeTool == Tool.COLOR_PENCIL && hasPencilColors) ||
                     (this.activeTool == Tool.COLOR_MARKER && hasMarkerColors) ||
@@ -618,27 +587,24 @@ public class SketchbookScreen extends Screen {
 
             if (canDraw) {
                 double physicalCellSize = (double) this.scale / this.resolutionMultiplier;
-                double[] magnetMouse = applyRulerMagnet(mouseX, mouseY);
-                double[] lMouseMagnet = getLogicalMouse(magnetMouse[0], magnetMouse[1]);
+            double[] magnetMouse = applyRulerMagnet(mouseX, mouseY);
+            double[] lMouseMagnet = getLogicalMouse(magnetMouse[0], magnetMouse[1]);
 
                 int centerX = (int) ((lMouseMagnet[0] - canvasScreenLeft) / physicalCellSize);
                 int centerY = (int) ((lMouseMagnet[1] - renderY) / physicalCellSize);
 
                 int currentBrushSize = getBrushSize();
                 int actualSize = currentBrushSize;
-
                 if (this.activeTool == Tool.SMUDGE || this.activeTool == Tool.KNEADED_ERASER) {
                     actualSize = (currentBrushSize == 1) ? 2 : (currentBrushSize == 2) ? 5 : 12;
                 }
 
                 int offset = actualSize / 2;
                 double radius = actualSize / 2.0;
-
                 double exactCX = centerX + (actualSize % 2 == 0 ? -0.5 : 0.0);
                 double exactCY = centerY + (actualSize % 2 == 0 ? -0.5 : 0.0);
 
                 boolean isMarker = (this.activeTool == Tool.COLOR_MARKER);
-
                 if (isMarker) {
                     exactCX = centerX + 0.5;
                     exactCY = centerY + 0.5;
@@ -653,7 +619,6 @@ public class SketchbookScreen extends Screen {
                 double length = currentBrushSize * 5.0;
 
                 int bound = isMarker ? (int) Math.ceil(length / 2.0) + 1 : offset;
-
                 int startX = isMarker ? (centerX - bound) : (centerX - offset);
                 int endX = isMarker ? (centerX + bound) : (centerX - offset + actualSize - 1);
                 int startY = isMarker ? (centerY - bound) : (centerY - offset);
@@ -679,8 +644,7 @@ public class SketchbookScreen extends Screen {
                             double localY = -dx * mSin + dy * mCos;
                             if (Math.abs(localX) >= length / 2.0 || Math.abs(localY) >= thickness / 2.0) continue;
                         } else {
-                            if ((this.activeTool == Tool.SMUDGE || this.activeTool == Tool.KNEADED_ERASER) && Math.sqrt(dx * dx + dy * dy) > radius)
-                                continue;
+                            if ((this.activeTool == Tool.SMUDGE || this.activeTool == Tool.KNEADED_ERASER) && Math.sqrt(dx * dx + dy * dy) > radius) continue;
                         }
 
                         if (x >= 0 && x < this.canvasWidth * this.resolutionMultiplier && y >= 0 && y < this.canvasHeight * this.resolutionMultiplier) {
@@ -692,47 +656,112 @@ public class SketchbookScreen extends Screen {
                 }
             }
         }
-
         guiGraphics.pose().popPose();
 
+        // Номер страницы
         String pageText = String.valueOf(this.currentPageIndex + 1);
         int textX = renderX + (this.fileWidth * this.scale) - this.font.width(pageText) - 10;
         int textY = renderY + (this.fileHeight * this.scale) - 15;
         guiGraphics.drawString(this.font, pageText, textX, textY, 0xFF777777, false);
 
-        if (this.compassState != CompassState.INACTIVE) {
-            double screenAnchorX = lMouseX, screenAnchorY = lMouseY;
-            double screenPencilX = lMouseX, screenPencilY = lMouseY;
+        // =========================================================================
+        // ОТРИСОВКА АКТИВНОЙ ТЕКСТОВОЙ РАМКИ (ВНУТРИ МАТРИЦЫ ПОВОРОТА)
+        // =========================================================================
+        if (this.isTextModeActive && this.activeTextBox != null) {
+            TextBoxState box = this.activeTextBox;
+            double pCell = (double) this.scale / this.resolutionMultiplier;
 
-            if (this.compassState != CompassState.FOLDED) {
-                screenAnchorX = this.compassAnchorX;
-                screenAnchorY = this.compassAnchorY;
+            int screenX1 = canvasScreenLeft + (int) (box.x1 * pCell);
+            int screenY1 = renderY + (int) (box.y1 * pCell);
+            int screenX2 = canvasScreenLeft + (int) (box.x2 * pCell);
+            int screenY2 = renderY + (int) (box.y2 * pCell);
 
-                if (this.compassState == CompassState.ANCHORED) {
-                    double dx = lMouseX - this.compassAnchorX;
-                    double dy = lMouseY - this.compassAnchorY;
-                    double dist = Math.sqrt(dx * dx + dy * dy);
+            // 1. Клики по неподвижной панели форматирования (экранные координаты)
+            double rad = Math.toRadians(this.rotationAngle);
+            double cos = Math.cos(rad);
+            double sin = Math.sin(rad);
 
-                    if (dist > 192.0) {
-                        dx = (dx / dist) * 192.0;
-                        dy = (dy / dist) * 192.0;
+            double localX = screenX1 - cx;
+            double localY = (screenY2 + 6) - cy;
+
+            int toolbarX = (int) (cx + (localX * cos - localY * sin));
+            int toolbarY = (int) (cy + (localX * sin + localY * cos));
+            toolbarX = Math.max(10, Math.min(this.width - 160, toolbarX));
+            toolbarY = Math.max(10, Math.min(this.height - 40, toolbarY));
+
+            int colorBarY = toolbarY + 20;
+
+            if (mouseY >= toolbarY && mouseY <= toolbarY + 20) {
+                if (mouseX >= toolbarX + 4 && mouseX <= toolbarX + 16) { box.applyFormattingCode("§l"); return true; }
+                if (mouseX >= toolbarX + 18 && mouseX <= toolbarX + 30) { box.applyFormattingCode("§o"); return true; }
+                if (mouseX >= toolbarX + 32 && mouseX <= toolbarX + 44) { box.applyFormattingCode("§n"); return true; }
+                if (mouseX >= toolbarX + 46 && mouseX <= toolbarX + 58) { box.applyFormattingCode("§m"); return true; }
+                if (mouseX >= toolbarX + 62 && mouseX <= toolbarX + 74) { box.fontScale = Math.max(0.5f, box.fontScale - 0.25f); return true; }
+                if (mouseX >= toolbarX + 76 && mouseX <= toolbarX + 88) { box.fontScale = Math.min(2.0f, box.fontScale + 0.25f); return true; }
+                if (mouseX >= toolbarX + 90 && mouseX <= toolbarX + 102) { box.cycleOpacity(); return true; }
+                if (mouseX >= toolbarX + 104 && mouseX <= toolbarX + 116) { box.toggleOrientation(); return true; } // Переключатель ориентации
+                if (mouseX >= toolbarX + 118 && mouseX <= toolbarX + 130) { commitTextToCanvas(); return true; }
+                if (mouseX >= toolbarX + 132 && mouseX <= toolbarX + 144) { this.isTextModeActive = false; this.activeTextBox = null; return true; }
+            }
+
+            if (hasColorPencil && mouseY >= colorBarY && mouseY <= colorBarY + 12) {
+                for (int colorId = 0; colorId < 16; colorId++) {
+                    int colorX = toolbarX + 6 + colorId * 8;
+                    int colorY = colorBarY + 3;
+                    if (mouseX >= colorX - 1 && mouseX <= colorX + 6 && mouseY >= colorY - 1 && mouseY <= colorY + 6) {
+                        box.applyColor(colorId);
+                        return true;
                     }
-
-                    screenPencilX = this.compassAnchorX + dx;
-                    screenPencilY = this.compassAnchorY + dy;
-                } else if (this.compassState == CompassState.LOCKED) {
-                    double angle = Math.atan2(lMouseY - this.compassAnchorY, lMouseX - this.compassAnchorX);
-                    screenPencilX = this.compassAnchorX + this.compassRadius * Math.cos(angle);
-                    screenPencilY = this.compassAnchorY + this.compassRadius * Math.sin(angle);
                 }
             }
 
-            net.avizvul.esquissemod.client.render.CompassGeometryCalculator.renderCompass(guiGraphics, screenAnchorX, screenAnchorY, screenPencilX, screenPencilY);
+            // 2. Клики по повернутой рамке (логические координаты холста)
+    double[] logicalMouse = getLogicalMouse(mouseX, mouseY);
+            double lMouseX = logicalMouse[0];
+            double lMouseY = logicalMouse[1];
+
+            if (button == 0) {
+                int handleSize = 8;
+
+                // Изменение размера (правый нижний угол)
+                if (lMouseX >= screenX2 - handleSize && lMouseX <= screenX2 + handleSize && lMouseY >= screenY2 - handleSize && lMouseY <= screenY2 + handleSize) {
+                    this.isTextBoxResizing = true;
+                    return true;
+                }
+
+                // Ручка ориентации [↕] (верхний правый угол)
+                if (lMouseX >= screenX2 - 12 && lMouseX <= screenX2 + 4 && lMouseY >= screenY1 - 6 && lMouseY <= screenY1 + 2) {
+                    box.toggleOrientation();
+                    return true;
+                }
+
+                // Перемещение (плашка сверху)
+                if (lMouseX >= screenX1 && lMouseX <= screenX2 - 12 && lMouseY >= screenY1 - 6 && lMouseY <= screenY1 + 2) {
+                    this.isTextBoxDragging = true;
+                    this.textBoxDragStartX = lMouseX - screenX1;
+                    this.textBoxDragStartY = lMouseY - screenY1;
+                    return true;
+                }
+
+                // Клик внутри рамки — каретка и выделение
+                if (lMouseX >= screenX1 && lMouseX <= screenX2 && lMouseY >= screenY1 && lMouseY <= screenY2) {
+                    int charIndex = getCharIndexAtMouse(box, screenX1, screenY1, screenX2, lMouseX, lMouseY);
+                    boolean hasShift = Screen.hasShiftDown();
+                    box.setCaret(charIndex, hasShift);
+                    this.isTextSelectingWithMouse = true;
+                    return true;
+                }
+            }
+            return true;
         }
 
+
+        // =========================================================================
+        // КОНЕЦ МАТРИЦЫ ПОВОРОТА ХОЛСТА
+        // =========================================================================
         guiGraphics.pose().popPose();
 
-        // --- 1. ОТРИСОВКА КНОПОК ИНСТРУМЕНТОВ ---
+        // --- 1. ОТРИСОВКА КНОПОК ИНСТРУМЕНТОВ И ИНДИКАТОРОВ ---
         ToolButtonCoords toolCoords = getToolButtonCoords();
         int scaledBtnWidth = toolCoords.scaledBtnWidth();
         int scaledBtnHeight = toolCoords.scaledBtnHeight();
@@ -743,30 +772,20 @@ public class SketchbookScreen extends Screen {
         boolean isColorMarkerActive = (this.activeTool == Tool.COLOR_MARKER) || (this.activeTool == Tool.TEXT && this.previousDrawingTool == Tool.COLOR_MARKER);
 
         if (hasPencil) renderToolButton(guiGraphics, mouseX, mouseY, isPencilActive, PENCIL_TEX, toolCoords.pencilX());
-        if (hasColorPencil)
-            renderColorToolButton(guiGraphics, mouseX, mouseY, toolCoords.colorPencilX(), colorPencilStack, COLOR_PENCIL_TEX, COLOR_PENCIL_TINT_TEX, Tool.COLOR_PENCIL);
-        if (hasColorMarker)
-            renderColorToolButton(guiGraphics, mouseX, mouseY, toolCoords.colorMarkerX(), getColorMarkerStack(), COLOR_MARKER_TEX, COLOR_MARKER_TINT_TEX, Tool.COLOR_MARKER);
-        if (hasEraser)
-            renderToolButton(guiGraphics, mouseX, mouseY, this.activeTool == Tool.ERASER, ERASER_TEX, toolCoords.eraserX());
-        if (hasKneaded)
-            renderToolButton(guiGraphics, mouseX, mouseY, this.activeTool == Tool.KNEADED_ERASER, KNEADED_ERASER_TEX, toolCoords.kneadedX());
-        if (hasSmudge)
-            renderToolButton(guiGraphics, mouseX, mouseY, this.activeTool == Tool.SMUDGE, SMUDGE_TEX, toolCoords.smudgeX());
+        if (hasColorPencil) renderColorToolButton(guiGraphics, mouseX, mouseY, toolCoords.colorPencilX(), colorPencilStack, COLOR_PENCIL_TEX, COLOR_PENCIL_TINT_TEX, Tool.COLOR_PENCIL);
+        if (hasColorMarker) renderColorToolButton(guiGraphics, mouseX, mouseY, toolCoords.colorMarkerX(), getColorMarkerStack(), COLOR_MARKER_TEX, COLOR_MARKER_TINT_TEX, Tool.COLOR_MARKER);
+        if (hasEraser) renderToolButton(guiGraphics, mouseX, mouseY, this.activeTool == Tool.ERASER, ERASER_TEX, toolCoords.eraserX());
+        if (hasKneaded) renderToolButton(guiGraphics, mouseX, mouseY, this.activeTool == Tool.KNEADED_ERASER, KNEADED_ERASER_TEX, toolCoords.kneadedX());
+        if (hasSmudge) renderToolButton(guiGraphics, mouseX, mouseY, this.activeTool == Tool.SMUDGE, SMUDGE_TEX, toolCoords.smudgeX());
 
-        // Отрисовка дополнительных инструментов (Линейка, Лупа, Циркуль)
         boolean hasRuler = hasTool(net.avizvul.esquissemod.item.ModItems.RULER.get());
         boolean hasMagGlass = hasTool(ModItems.MAGNIFYING_GLASS.get());
         boolean hasCompass = hasTool(ModItems.DRAWING_COMPASS.get());
 
-        if (hasRuler)
-            renderToolButton(guiGraphics, mouseX, mouseY, this.isRulerActive, RULER_BTN_TEX, toolCoords.rulerX());
-        if (hasMagGlass)
-            renderToolButton(guiGraphics, mouseX, mouseY, this.isMagnifierLocked, MAGGLASS_BTN_TEX, toolCoords.magGlassX());
-        if (hasCompass)
-            renderToolButton(guiGraphics, mouseX, mouseY, this.compassState != CompassState.INACTIVE, COMPASS_BTN_TEX, toolCoords.compassX());
+        if (hasRuler) renderToolButton(guiGraphics, mouseX, mouseY, this.isRulerActive, RULER_BTN_TEX, toolCoords.rulerX());
+        if (hasMagGlass) renderToolButton(guiGraphics, mouseX, mouseY, this.isMagnifierLocked, MAGGLASS_BTN_TEX, toolCoords.magGlassX());
+        if (hasCompass) renderToolButton(guiGraphics, mouseX, mouseY, this.compassState != CompassState.INACTIVE, COMPASS_BTN_TEX, toolCoords.compassX());
 
-        // --- 2. ИНДИКАТОРЫ РАЗМЕРА И ТВЁРДОСТИ КИСТИ ---
         Tool effectiveTool = (this.activeTool == Tool.TEXT) ? this.previousDrawingTool : this.activeTool;
         int activeToolX = switch (effectiveTool) {
             case PENCIL -> toolCoords.pencilX();
@@ -779,45 +798,33 @@ public class SketchbookScreen extends Screen {
         };
 
         if (activeToolX > -1000) {
-            // Индикаторы размера (точки)
             renderSizeIndicators(guiGraphics, mouseX, mouseY, activeToolX, peekY);
-
-            // Отрисовка твёрдости (текст 2H / HB / 4B или S / M / H)
             int hardness = getHardness();
             boolean isPencilType = (effectiveTool == Tool.PENCIL || effectiveTool == Tool.COLOR_PENCIL);
-
-            String hardnessText = isPencilType
-                    ? ((hardness == 1) ? "2H" : (hardness == 2) ? "HB" : "4B")
-                    : ((hardness == 1) ? "S" : (hardness == 2) ? "M" : "H");
-
-            int textColor = isPencilType
-                    ? ((hardness == 1) ? 0xFFAAAAAA : (hardness == 2) ? 0xFF666666 : 0xFF222222)
-                    : ((hardness == 1) ? 0xFFAAAAAA : (hardness == 2) ? 0xFFCCCCCC : 0xFFFFFFFF);
-
+            String hardnessText = isPencilType ? ((hardness == 1) ? "2H" : (hardness == 2) ? "HB" : "4B") : ((hardness == 1) ? "S" : (hardness == 2) ? "M" : "H");
+            int textColor = isPencilType ? ((hardness == 1) ? 0xFFAAAAAA : (hardness == 2) ? 0xFF666666 : 0xFF222222) : ((hardness == 1) ? 0xFFAAAAAA : (hardness == 2) ? 0xFFCCCCCC : 0xFFFFFFFF);
             int hardnessTextX = activeToolX + (scaledBtnWidth / 2) - (this.font.width(hardnessText) / 2);
             guiGraphics.drawString(this.font, hardnessText, hardnessTextX, peekY - 24, textColor, false);
         }
 
-        // --- 3. ЦВЕТОВАЯ ПАЛИТРА ---
+        // Палитра инструментов
         if (effectiveTool == Tool.COLOR_PENCIL && !colorPencilStack.isEmpty()) {
             renderPalette(guiGraphics, colorPencilStack);
         } else if (effectiveTool == Tool.COLOR_MARKER && !getColorMarkerStack().isEmpty()) {
             renderPalette(guiGraphics, getColorMarkerStack());
         }
 
-        // --- 4. КНОПКА ТЕКСТА (Т) СТРОГО НАД ВЫБРАННЫМ КАРАНДАШОМ ---
+        // Символ (Т) над карандашом
         if ((hasPencil && isPencilActive) || (hasColorPencil && isColorPencilActive)) {
             int activeX = isPencilActive ? toolCoords.pencilX() : toolCoords.colorPencilX();
             int textSymbolX = activeX + (scaledBtnWidth / 2) - (this.font.width("(T)") / 2);
             int textSymbolY = peekY - 38;
-
             boolean isTextSelected = (this.activeTool == Tool.TEXT);
             int symbolColor = isTextSelected ? 0xFFFFFF00 : (mouseX >= textSymbolX && mouseX < textSymbolX + 16 && mouseY >= textSymbolY && mouseY < textSymbolY + 10 ? 0xFFFFAA00 : 0xFFFFFFFF);
-
             guiGraphics.drawString(this.font, "(T)", textSymbolX, textSymbolY, symbolColor, true);
         }
 
-        // --- 5. ОТРИСОВКА ЛИНЕЙКИ ---
+        // Отрисовка линейки
         if (this.isRulerActive) {
             guiGraphics.pose().pushPose();
             guiGraphics.pose().translate(this.rulerX, this.rulerY, 0);
@@ -827,190 +834,94 @@ public class SketchbookScreen extends Screen {
             guiGraphics.pose().popPose();
         }
 
-        // --- 6. ТЕКСТОВАЯ РАМКА, КУРСОР И ПАНЕЛЬ ФОРМАТИРОВАНИЯ ---
+        // =========================================================================
+        // 2. ОТРИСОВКА НЕПОДВИЖНОЙ ПАНЕЛИ ФОРМАТИРОВАНИЯ (В ЭКРАННЫХ КООРДИНАТАХ)
+        // =========================================================================
         if (this.isTextModeActive && this.activeTextBox != null) {
             TextBoxState box = this.activeTextBox;
-            int canvasLeft = canvasScreenLeft;
-            int canvasTop = renderY;
             double pCell = (double) this.scale / this.resolutionMultiplier;
 
-            int screenX1 = canvasLeft + (int) (box.x1 * pCell);
-            int screenY1 = canvasTop + (int) (box.y1 * pCell);
-            int screenX2 = canvasLeft + (int) (box.x2 * pCell);
-            int screenY2 = canvasTop + (int) (box.y2 * pCell);
+            int screenX1 = canvasScreenLeft + (int) (box.x1 * pCell);
+            int screenY2 = renderY + (int) (box.y2 * pCell);
 
-            // 1. Отрисовка внешней пунктирной рамки
-            int dashLen = 4, dashGap = 2, outlineColor = 0xFF007ACC;
-            for (int px = screenX1; px < screenX2; px += dashLen + dashGap) {
-                guiGraphics.fill(px, screenY1, Math.min(px + dashLen, screenX2), screenY1 + 1, outlineColor);
-                guiGraphics.fill(px, screenY2, Math.min(px + dashLen, screenX2), screenY2 + 1, outlineColor);
-            }
-            for (int py = screenY1; py < screenY2; py += dashLen + dashGap) {
-                guiGraphics.fill(screenX1, py, screenX1 + 1, Math.min(py + dashLen, screenY2), outlineColor);
-                guiGraphics.fill(screenX2, py, screenX2 + 1, Math.min(py + dashLen, screenY2), outlineColor);
-            }
+            // Рассчитываем эквивалентные экранные координаты под рамкой с учётом поворота холста
+            double rad = Math.toRadians(this.rotationAngle);
+            double cos = Math.cos(rad);
+            double sin = Math.sin(rad);
 
-            // 2. КРАСНЫЕ РУЧКИ УПРАВЛЕНИЯ (ПЕРЕМЕЩЕНИЕ И РАЗМЕР)
-            int redColor = 0xFFFF2222;
-            int darkRedBorder = 0xFF880000;
+            double localX = screenX1 - cx;
+            double localY = (screenY2 + 6) - cy;
 
-            // А) Ручка перемещения (Красная плашка над рамкой)
-            int dragY1 = screenY1 - 6;
-            int dragY2 = screenY1;
-            guiGraphics.fill(screenX1, dragY1, screenX2, dragY2, redColor);
-            guiGraphics.fill(screenX1, dragY1, screenX2, dragY1 + 1, darkRedBorder);
+            int toolbarX = (int) (cx + (localX * cos - localY * sin));
+            int toolbarY = (int) (cy + (localX * sin + localY * cos));
 
-            // Декоративный маркер по центру плашки перемещения
-            int midX = (screenX1 + screenX2) / 2;
-            guiGraphics.fill(midX - 4, dragY1 + 2, midX - 2, dragY1 + 4, 0xFFFFFFFF);
-            guiGraphics.fill(midX, dragY1 + 2, midX + 2, dragY1 + 4, 0xFFFFFFFF);
-            guiGraphics.fill(midX + 4, dragY1 + 2, midX + 6, dragY1 + 4, 0xFFFFFFFF);
+            toolbarX = Math.max(10, Math.min(this.width - 160, toolbarX));
+            toolbarY = Math.max(10, Math.min(this.height - 40, toolbarY));
 
-            // Б) Ручка изменения размера (Красный квадрат 8x8px в правом нижнем углу)
-            int resX1 = screenX2 - 4;
-            int resY1 = screenY2 - 4;
-            int resX2 = screenX2 + 4;
-            int resY2 = screenY2 + 4;
+            // 1. Верхняя панель (150px)
+            guiGraphics.fill(toolbarX, toolbarY, toolbarX + 150, toolbarY + 20, 0xE0000000);
 
-            guiGraphics.fill(resX1 - 1, resY1 - 1, resX2 + 1, resY2 + 1, darkRedBorder);
-            guiGraphics.fill(resX1, resY1, resX2, resY2, redColor);
-            guiGraphics.fill(resX1 + 2, resY1 + 2, resX2 - 2, resY2 - 2, 0xFFFFFFFF);
+            boolean isBoldActive = box.isStyleActive(TextBoxState.StyleType.BOLD);
+            boolean isItalicActive = box.isStyleActive(TextBoxState.StyleType.ITALIC);
+            boolean isUnderlineActive = box.isStyleActive(TextBoxState.StyleType.UNDERLINE);
+            boolean isStrikethroughActive = box.isStyleActive(TextBoxState.StyleType.STRIKETHROUGH);
 
-            // 3. Расчёт перенесённых строк и масштаба
-            float renderScale = (float) (box.fontScale * pCell);
+            guiGraphics.fill(toolbarX + 4, toolbarY + 3, toolbarX + 16, toolbarY + 17, isBoldActive ? 0xFF007ACC : 0x40FFFFFF);
+            guiGraphics.drawString(this.font, "§lB§r", toolbarX + 7, toolbarY + 5, 0xFFFFFFFF, false);
 
-            int maxW = Math.max(10, (int) ((screenX2 - screenX1 - 4) / renderScale));
-            java.util.List<TextBoxState.TextLine> lines = box.getWrappedLines(this.font, maxW);
-            int lineH = (int) (9 * renderScale);
+            guiGraphics.fill(toolbarX + 18, toolbarY + 3, toolbarX + 30, toolbarY + 17, isItalicActive ? 0xFF007ACC : 0x40FFFFFF);
+            guiGraphics.drawString(this.font, "§oI§r", toolbarX + 22, toolbarY + 5, 0xFFFFFFFF, false);
 
-// 4. Подсветка выделения (ПОСТРОЧНО)
-            if (box.hasSelection()) {
-                int min = box.getSelectionMin();
-                int max = box.getSelectionMax();
-                for (int l = 0; l < lines.size(); l++) {
-                    TextBoxState.TextLine line = lines.get(l);
-                    int lineY = screenY1 + 2 + l * lineH;
+            guiGraphics.fill(toolbarX + 32, toolbarY + 3, toolbarX + 44, toolbarY + 17, isUnderlineActive ? 0xFF007ACC : 0x40FFFFFF);
+            guiGraphics.drawString(this.font, "§nU§r", toolbarX + 36, toolbarY + 5, 0xFFFFFFFF, false);
 
-                    if (max > line.startCharIndex && min <= line.endCharIndex) {
-                        int selStart = Math.max(min, line.startCharIndex);
-                        int selEnd = Math.min(max, line.endCharIndex);
-                        String textBefore = box.getFormattedSubstring(line.startCharIndex, selStart);
-                        String textSelected = box.getFormattedSubstring(line.startCharIndex, selEnd);
+            guiGraphics.fill(toolbarX + 46, toolbarY + 3, toolbarX + 58, toolbarY + 17, isStrikethroughActive ? 0xFF007ACC : 0x40FFFFFF);
+            guiGraphics.drawString(this.font, "§mS§r", toolbarX + 50, toolbarY + 5, 0xFFFFFFFF, false);
 
-                        int hX1 = screenX1 + 2 + (int) (this.font.width(textBefore) * renderScale);
-                        int hX2 = screenX1 + 2 + (int) (this.font.width(textSelected) * renderScale);
+            guiGraphics.fill(toolbarX + 62, toolbarY + 3, toolbarX + 74, toolbarY + 17, 0x40FFFFFF);
+            guiGraphics.drawString(this.font, "-", toolbarX + 66, toolbarY + 5, 0xFFFFFFFF, false);
 
-                        if (max > line.endCharIndex && line.endCharIndex > line.startCharIndex) {
-                            hX2 = Math.max(hX2, screenX1 + 2 + (int) (line.width * renderScale) + 3);
-                        }
+            guiGraphics.fill(toolbarX + 76, toolbarY + 3, toolbarX + 88, toolbarY + 17, 0x40FFFFFF);
+            guiGraphics.drawString(this.font, "+", toolbarX + 80, toolbarY + 5, 0xFFFFFFFF, false);
 
-                        guiGraphics.fill(hX1, lineY, hX2, lineY + lineH, 0x802266FF);
+            // Прозрачность H/M/S
+            String opacityLabel = (box.textOpacityLevel == 3) ? "H" : (box.textOpacityLevel == 2) ? "M" : "S";
+            guiGraphics.fill(toolbarX + 90, toolbarY + 3, toolbarX + 102, toolbarY + 17, 0xFF007ACC);
+            guiGraphics.drawString(this.font, opacityLabel, toolbarX + 94, toolbarY + 5, 0xFFFFFFFF, false);
+
+            // Кнопка ориентации [↕]
+            guiGraphics.fill(toolbarX + 104, toolbarY + 3, toolbarX + 116, toolbarY + 17, box.isVertical ? 0xFF007ACC : 0x40FFFFFF);
+            guiGraphics.drawString(this.font, "↕", toolbarX + 108, toolbarY + 5, 0xFFFFFFFF, false);
+
+            // Кнопка «Применить» (v)
+            guiGraphics.fill(toolbarX + 118, toolbarY + 3, toolbarX + 130, toolbarY + 17, 0xFF228B22);
+            guiGraphics.drawString(this.font, "v", toolbarX + 122, toolbarY + 5, 0xFFFFFFFF, false);
+
+            // Кнопка «Отмена» (x)
+            guiGraphics.fill(toolbarX + 132, toolbarY + 3, toolbarX + 144, toolbarY + 17, 0xFFB22222);
+            guiGraphics.drawString(this.font, "x", toolbarX + 136, toolbarY + 5, 0xFFFFFFFF, false);
+
+            // 2. Нижняя палитра цветов (16 цветов)
+            if (hasColorPencil) {
+                int colorBarY = toolbarY + 20;
+                guiGraphics.fill(toolbarX, colorBarY, toolbarX + 150, colorBarY + 12, 0xE0000000);
+
+                for (int colorId = 0; colorId < 16; colorId++) {
+                    int colorX = toolbarX + 6 + colorId * 8;
+                    int colorY = colorBarY + 3;
+
+                    int rgb = net.minecraft.world.item.DyeColor.byId(colorId).getTextureDiffuseColor() | 0xFF000000;
+                    boolean isSelected = (box.pendingColorId == colorId);
+
+                    if (isSelected) {
+                        guiGraphics.fill(colorX - 1, colorY - 1, colorX + 6, colorY + 6, 0xFFFFFFFF);
                     }
-                }
-            }
-
-// 5. Отрисовка текста (ПОСТРОЧНО)
-            int textColor = getActiveTextColorArgb();
-            for (int l = 0; l < lines.size(); l++) {
-                TextBoxState.TextLine line = lines.get(l);
-                int lineY = screenY1 + 2 + l * lineH;
-
-                guiGraphics.pose().pushPose();
-                guiGraphics.pose().translate(screenX1 + 2, lineY, 0);
-                guiGraphics.pose().scale(renderScale, renderScale, 1.0f);
-                guiGraphics.drawString(this.font, line.formattedText, 0, 0, textColor, false);
-                guiGraphics.pose().popPose();
-            }
-
-            // 6. Отрисовка мигающей каретки
-            int caretLineIdx = 0;
-            TextBoxState.TextLine caretLine = lines.get(0);
-            for (int l = 0; l < lines.size(); l++) {
-                TextBoxState.TextLine line = lines.get(l);
-                if (box.caret >= line.startCharIndex && (box.caret <= line.endCharIndex || l == lines.size() - 1)) {
-                    caretLineIdx = l;
-                    caretLine = line;
-                    break;
-                }
-            }
-
-            String textBeforeCaret = box.getFormattedSubstring(caretLine.startCharIndex, box.caret);
-            int caretX = screenX1 + 2 + (int) (this.font.width(textBeforeCaret) * renderScale);
-            int caretY = screenY1 + 2 + caretLineIdx * lineH;
-
-            if (System.currentTimeMillis() / 500 % 2 == 0) {
-                guiGraphics.fill(caretX, caretY, caretX + 1, caretY + lineH, 0xFFFFFFFF);
-            }
-
-
-            // --- ПАНЕЛЬ ФОРМАТИРОВАНИЯ ТЕКСТА ---
-            if (this.isTextModeActive && this.activeTextBox != null) {
-                // ВАЖНО: box, screenX1, screenX2, screenY1, screenY2 и hasColorPencil уже объявлены выше!
-                int toolbarX = screenX1;
-                int toolbarY = screenY2 + 6;
-
-                // 1. Верхняя панель (единая ширина 138px)
-                guiGraphics.fill(toolbarX, toolbarY, toolbarX + 138, toolbarY + 20, 0xE0000000);
-
-                boolean isBoldActive = box.isStyleActive(TextBoxState.StyleType.BOLD);
-                boolean isItalicActive = box.isStyleActive(TextBoxState.StyleType.ITALIC);
-                boolean isUnderlineActive = box.isStyleActive(TextBoxState.StyleType.UNDERLINE);
-                boolean isStrikethroughActive = box.isStyleActive(TextBoxState.StyleType.STRIKETHROUGH);
-
-                // Стили B, I, U, S
-                guiGraphics.fill(toolbarX + 4, toolbarY + 3, toolbarX + 16, toolbarY + 17, isBoldActive ? 0xFF007ACC : 0x40FFFFFF);
-                guiGraphics.drawString(this.font, "§lB§r", toolbarX + 7, toolbarY + 5, 0xFFFFFFFF, false);
-
-                guiGraphics.fill(toolbarX + 18, toolbarY + 3, toolbarX + 30, toolbarY + 17, isItalicActive ? 0xFF007ACC : 0x40FFFFFF);
-                guiGraphics.drawString(this.font, "§oI§r", toolbarX + 22, toolbarY + 5, 0xFFFFFFFF, false);
-
-                guiGraphics.fill(toolbarX + 32, toolbarY + 3, toolbarX + 44, toolbarY + 17, isUnderlineActive ? 0xFF007ACC : 0x40FFFFFF);
-                guiGraphics.drawString(this.font, "§nU§r", toolbarX + 36, toolbarY + 5, 0xFFFFFFFF, false);
-
-                guiGraphics.fill(toolbarX + 46, toolbarY + 3, toolbarX + 58, toolbarY + 17, isStrikethroughActive ? 0xFF007ACC : 0x40FFFFFF);
-                guiGraphics.drawString(this.font, "§mS§r", toolbarX + 50, toolbarY + 5, 0xFFFFFFFF, false);
-
-                // Масштаб текста - и +
-                guiGraphics.fill(toolbarX + 62, toolbarY + 3, toolbarX + 74, toolbarY + 17, 0x40FFFFFF);
-                guiGraphics.drawString(this.font, "-", toolbarX + 66, toolbarY + 5, 0xFFFFFFFF, false);
-
-                guiGraphics.fill(toolbarX + 76, toolbarY + 3, toolbarX + 88, toolbarY + 17, 0x40FFFFFF);
-                guiGraphics.drawString(this.font, "+", toolbarX + 80, toolbarY + 5, 0xFFFFFFFF, false);
-
-                // Прозрачность H / M / S
-                String opacityLabel = (box.textOpacityLevel == 3) ? "H" : (box.textOpacityLevel == 2) ? "M" : "S";
-                guiGraphics.fill(toolbarX + 90, toolbarY + 3, toolbarX + 102, toolbarY + 17, 0xFF007ACC);
-                guiGraphics.drawString(this.font, opacityLabel, toolbarX + 94, toolbarY + 5, 0xFFFFFFFF, false);
-
-                // Кнопка «Применить» (v)
-                guiGraphics.fill(toolbarX + 106, toolbarY + 3, toolbarX + 118, toolbarY + 17, 0xFF228B22);
-                guiGraphics.drawString(this.font, "v", toolbarX + 110, toolbarY + 5, 0xFFFFFFFF, false);
-
-                // Кнопка «Отмена» (x)
-                guiGraphics.fill(toolbarX + 120, toolbarY + 3, toolbarX + 132, toolbarY + 17, 0xFFB22222);
-                guiGraphics.drawString(this.font, "x", toolbarX + 124, toolbarY + 5, 0xFFFFFFFF, false);
-
-                // 2. Нижняя панель цветов в один ряд (16 цветов)
-                if (hasColorPencil) {
-                    int colorBarY = toolbarY + 20;
-                    guiGraphics.fill(toolbarX, colorBarY, toolbarX + 138, colorBarY + 12, 0xE0000000);
-
-                    for (int colorId = 0; colorId < 16; colorId++) {
-                        int colorX = toolbarX + 6 + colorId * 8;
-                        int colorY = colorBarY + 3;
-
-                        int rgb = net.minecraft.world.item.DyeColor.byId(colorId).getTextureDiffuseColor() | 0xFF000000;
-                        boolean isSelected = (box.pendingColorId == colorId);
-
-                        if (isSelected) {
-                            guiGraphics.fill(colorX - 1, colorY - 1, colorX + 6, colorY + 6, 0xFFFFFFFF);
-                        }
-                        guiGraphics.fill(colorX, colorY, colorX + 5, colorY + 5, rgb);
-                    }
+                    guiGraphics.fill(colorX, colorY, colorX + 5, colorY + 5, rgb);
                 }
             }
         }
     }
+
 
     //_________________________________________________________________________________
 
@@ -2129,6 +2040,62 @@ public class SketchbookScreen extends Screen {
 
 //_________________________________________________________________________________
 
+    private int getCharIndexAtMouse(TextBoxState box, int screenX1, int screenY1, int screenX2, double mouseX, double mouseY) {
+        double pCell = (double) this.scale / this.resolutionMultiplier;
+        float renderScale = (float) (box.fontScale * pCell);
+
+        if (box.isVertical) {
+            int screenY2 = renderY + (int) (box.y2 * pCell);
+            int maxW = Math.max(10, (int) ((screenY2 - screenY1 - 4) / renderScale));
+            java.util.List<TextBoxState.TextLine> lines = box.getWrappedLines(this.font, maxW);
+
+            double relativeX = (screenX2 - 2 - mouseX) / renderScale;
+            int lineIdx = (int) (relativeX / 9.0);
+            lineIdx = Math.max(0, Math.min(lines.size() - 1, lineIdx));
+
+            TextBoxState.TextLine targetLine = lines.get(lineIdx);
+            double relativeY = (mouseY - (screenY1 + 2)) / renderScale;
+            if (relativeY <= 0) return targetLine.startCharIndex;
+
+            int bestIndex = targetLine.startCharIndex;
+            double minDiff = Double.MAX_VALUE;
+            for (int i = targetLine.startCharIndex; i <= targetLine.endCharIndex; i++) {
+                String sub = box.getFormattedSubstring(targetLine.startCharIndex, i);
+                int widthSoFar = this.font.width(sub);
+                double diff = Math.abs(relativeY - widthSoFar);
+                if (diff < minDiff) {
+                    minDiff = diff;
+                    bestIndex = i;
+                }
+            }
+            return bestIndex;
+        } else {
+            int maxW = Math.max(10, (int) ((screenX2 - screenX1 - 4) / renderScale));
+            java.util.List<TextBoxState.TextLine> lines = box.getWrappedLines(this.font, maxW);
+
+            double relativeY = (mouseY - (screenY1 + 2)) / renderScale;
+            int lineIdx = (int) (relativeY / 9.0);
+            lineIdx = Math.max(0, Math.min(lines.size() - 1, lineIdx));
+
+            TextBoxState.TextLine targetLine = lines.get(lineIdx);
+            double relativeX = (mouseX - (screenX1 + 2)) / renderScale;
+            if (relativeX <= 0) return targetLine.startCharIndex;
+
+            int bestIndex = targetLine.startCharIndex;
+            double minDiff = Double.MAX_VALUE;
+            for (int i = targetLine.startCharIndex; i <= targetLine.endCharIndex; i++) {
+                String sub = box.getFormattedSubstring(targetLine.startCharIndex, i);
+                int widthSoFar = this.font.width(sub);
+                double diff = Math.abs(relativeX - widthSoFar);
+                if (diff < minDiff) {
+                    minDiff = diff;
+                    bestIndex = i;
+                }
+            }
+            return bestIndex;
+        }
+    }
+
     public static class StyledChar {
         public char ch;
         public boolean bold;
@@ -2151,6 +2118,7 @@ public class SketchbookScreen extends Screen {
 
         public int x1, y1;
         public int x2, y2;
+        public boolean isVertical = false;
 
         public java.util.List<StyledChar> chars = new java.util.ArrayList<>();
         public StringBuilder text = new StringBuilder();
@@ -2172,6 +2140,11 @@ public class SketchbookScreen extends Screen {
         public boolean hasPendingOverride = false;
 
         public enum StyleType { BOLD, ITALIC, UNDERLINE, STRIKETHROUGH }
+
+        public void toggleOrientation() {
+            this.isVertical = !this.isVertical;
+            updateText();
+        }
 
         // Массив formatting-тегов Minecraft для 16 красителей
         private static final String[] COLOR_CODES = {
@@ -2556,6 +2529,7 @@ public class SketchbookScreen extends Screen {
         if (!this.isTextModeActive || this.activeTextBox == null) {
             this.isTextModeActive = false;
             this.activeTextBox = null;
+            this.isTextCreatingWithDrag = false;
             return;
         }
 
@@ -2565,9 +2539,9 @@ public class SketchbookScreen extends Screen {
         if (!formattedString.isEmpty()) {
             int baseRgb = getActiveTextColorArgb() & 0xFFFFFF;
             int alpha = switch (box.textOpacityLevel) {
-                case 1 -> 84;  // 33% (Soft)
-                case 2 -> 168; // 66% (Medium)
-                default -> 255; // 100% (High)
+                case 1 -> 84;  // 33%
+                case 2 -> 168; // 66%
+                default -> 255; // 100%
             };
             int finalArgb = (alpha << 24) | baseRgb;
 
@@ -2576,7 +2550,8 @@ public class SketchbookScreen extends Screen {
                     box.x1,
                     box.y1,
                     box.fontScale,
-                    finalArgb
+                    finalArgb,
+                    box.isVertical // Передаем флаг вертикальной ориентации
             );
             this.textElements.add(element);
         }
@@ -2584,7 +2559,9 @@ public class SketchbookScreen extends Screen {
         this.isCanvasDirty = true;
         this.isTextModeActive = false;
         this.activeTextBox = null;
+        this.isTextCreatingWithDrag = false;
     }
+
 
 //_________________________________________________________________________________
 

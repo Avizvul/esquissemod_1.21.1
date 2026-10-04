@@ -449,6 +449,14 @@ public class SketchbookScreen extends Screen {
         int canvasScreenLeft = renderX + ((this.frameWidth + this.deadZoneWidth) * this.scale);
         int canvasScreenTop = renderY;
 
+        // Распознавание предметов в руках
+        ItemStack mainHand = this.minecraft.player.getMainHandItem();
+        ItemStack offHand = this.minecraft.player.getOffhandItem();
+
+        boolean holdingPencil = mainHand.is(ModItems.PENCIL.get()) || offHand.is(ModItems.PENCIL.get());
+        boolean holdingColorPencil = mainHand.is(ModItems.COLOR_PENCIL.get()) || offHand.is(ModItems.COLOR_PENCIL.get());
+        boolean holdingColorMarker = mainHand.is(ModItems.COLOR_MARKER.get()) || offHand.is(ModItems.COLOR_MARKER.get());
+
         boolean hasPencil = hasTool(ModItems.PENCIL.get());
         boolean hasEraser = hasTool(ModItems.ERASER.get());
         boolean hasSmudge = hasTool(ModItems.SMUDGE.get());
@@ -465,7 +473,7 @@ public class SketchbookScreen extends Screen {
         double cy = renderY + drawHeight / 2.0;
 
         // =========================================================================
-        // НАЧАЛО МАТРИЦЫ ПОВОРОТА ХОЛСТА (Всё внутри вращается вместе с альбомом)
+        // НАЧАЛО МАТРИЦЫ ПОВОРОТА ХОЛСТА (0°, 90°, 180°, 270°)
         // =========================================================================
         guiGraphics.pose().pushPose();
         guiGraphics.pose().translate(cx, cy, 0);
@@ -478,7 +486,6 @@ public class SketchbookScreen extends Screen {
         int scaledTabHeight = this.tabHeight * this.tabScale;
         TabCoords coords = getTabCoords(renderX, renderY, drawWidth);
 
-        // Вкладки перелистывания
         if (this.currentPageIndex > 0) {
         double[] lMouse = getLogicalMouse(mouseX, mouseY);
             boolean backHovered = !this.isDragging && !this.isRotating && lMouse[0] >= coords.tabX() && lMouse[0] < coords.tabX() + scaledTabWidth && lMouse[1] >= coords.backTabY() && lMouse[1] < coords.backTabY() + scaledTabHeight;
@@ -493,10 +500,8 @@ public class SketchbookScreen extends Screen {
             guiGraphics.blit(PAGE_F_TEX, coords.tabX(), coords.forwardTabY(), scaledTabWidth, scaledTabHeight, 0.0f, forwardVOffset, this.tabWidth, this.tabHeight, this.tabWidth, this.tabHeight * 2);
         }
 
-        // Текстура обложки
         guiGraphics.blit(TEXTURE, renderX, renderY, drawWidth, drawHeight, 0.0f, 0.0f, this.fileWidth, this.fileHeight, this.fileWidth, this.fileHeight);
 
-        // Линия отрыва
         int blueZoneWidth = this.deadZoneWidth * this.scale;
         int blueZoneLeft = renderX + (this.frameWidth * this.scale);
         int blueZoneRight = blueZoneLeft + blueZoneWidth;
@@ -519,7 +524,7 @@ public class SketchbookScreen extends Screen {
         int btnY = renderY + ((this.fileHeight - btnFileHeight) / 2) * this.scale;
         guiGraphics.blit(ROTATE_BTN_TEX, btnX, btnY, btnFileWidth * this.scale, btnFileHeight * this.scale, 0.0f, 0.0f, btnFileWidth, btnFileHeight, btnFileWidth, btnFileHeight);
 
-        // Холст с пикселями и запечённым текстом
+        // Холст с пикселями и текстом
         if (this.isCanvasDirty) updateActiveCanvasTexture();
 
         if (this.activeCanvasId != null) {
@@ -589,7 +594,7 @@ public class SketchbookScreen extends Screen {
             double[] lMouseMagnet = getLogicalMouse(magnetMouse[0], magnetMouse[1]);
 
                 int centerX = (int) ((lMouseMagnet[0] - canvasScreenLeft) / physicalCellSize);
-                int centerY = (int) ((lMouseMagnet[1] - renderY) / physicalCellSize);
+                int centerY = (int) ((lMouseMagnet[1]- renderY) / physicalCellSize);
 
                 int currentBrushSize = getBrushSize();
                 int actualSize = currentBrushSize;
@@ -674,7 +679,7 @@ public class SketchbookScreen extends Screen {
             int screenX2 = canvasScreenLeft + (int) (box.x2 * pCell);
             int screenY2 = renderY + (int) (box.y2 * pCell);
 
-            // 1. Внешняя пунктирная рамка
+            // 1. Пунктирная контурная рамка
             int dashLen = 4, dashGap = 2, outlineColor = 0xFF007ACC;
             for (int px = screenX1; px < screenX2; px += dashLen + dashGap) {
                 guiGraphics.fill(px, screenY1, Math.min(px + dashLen, screenX2), screenY1 + 1, outlineColor);
@@ -685,7 +690,7 @@ public class SketchbookScreen extends Screen {
                 guiGraphics.fill(screenX2, py, screenX2 + 1, Math.min(py + dashLen, screenY2), outlineColor);
             }
 
-            // 2. Красные ручки управления
+            // 2. Красные абсолютные ручки управления
             int redColor = 0xFFFF2222;
             int darkRedBorder = 0xFF880000;
 
@@ -701,7 +706,7 @@ public class SketchbookScreen extends Screen {
             guiGraphics.fill(screenX2 - 5, screenY2 - 5, screenX2 + 4, screenY2 + 4, darkRedBorder);
             guiGraphics.fill(screenX2 - 4, screenY2 - 4, screenX2 + 3, screenY2 + 3, redColor);
 
-            // 3. Текст, выделение и мигающая каретка
+            // 3. Текст, выделение и каретка
             float renderScale = (float) (box.fontScale * pCell);
             int lineH = (int) (9 * renderScale);
             int textColor = getActiveTextColorArgb();
@@ -809,7 +814,7 @@ public class SketchbookScreen extends Screen {
         // =========================================================================
         guiGraphics.pose().popPose();
 
-        // Отрисовка кнопок инструментов, индикаторов и линейки
+        // 6. Подсветка инструментов (Сохраняется активной в режиме (T))
         ToolButtonCoords toolCoords = getToolButtonCoords();
         int scaledBtnWidth = toolCoords.scaledBtnWidth();
         int scaledBtnHeight = toolCoords.scaledBtnHeight();
@@ -855,10 +860,12 @@ public class SketchbookScreen extends Screen {
             guiGraphics.drawString(this.font, hardnessText, hardnessTextX, peekY - 24, textColor, false);
         }
 
-        if (effectiveTool == Tool.COLOR_PENCIL && !colorPencilStack.isEmpty()) {
-            renderPalette(guiGraphics, colorPencilStack);
-        } else if (effectiveTool == Tool.COLOR_MARKER && !getColorMarkerStack().isEmpty()) {
-            renderPalette(guiGraphics, getColorMarkerStack());
+        // 5. Включение круговой палитры ТОЛЬКО для цветного карандаша и маркера
+        boolean enablePalette = (holdingColorPencil && effectiveTool == Tool.COLOR_PENCIL) ||
+                (holdingColorMarker && effectiveTool == Tool.COLOR_MARKER);
+
+        if (enablePalette) {
+            renderPalette(guiGraphics, (effectiveTool == Tool.COLOR_MARKER) ? getColorMarkerStack() : colorPencilStack);
         }
 
         if ((hasPencil && isPencilActive) || (hasColorPencil && isColorPencilActive)) {
@@ -880,24 +887,36 @@ public class SketchbookScreen extends Screen {
         }
 
         // =========================================================================
-        // ОТРИСОВКА НЕПОДВИЖНОЙ ПАНЕЛИ ФОРМАТИРОВАНИЯ (В ЭКРАННЫХ КООРДИНАТАХ)
+        // 2. РЕНДЕР ПАНЕЛИ ФОРМАТИРОВАНИЯ (ВСЕГДА ПОД НИЖНИМ КРАЕМ РАМКИ НА ЭКРАНЕ)
         // =========================================================================
         if (this.isTextModeActive && this.activeTextBox != null) {
             TextBoxState box = this.activeTextBox;
             double pCell = (double) this.scale / this.resolutionMultiplier;
 
-            int screenX1 = canvasScreenLeft + (int) (box.x1 * pCell);
-            int screenY2 = renderY + (int) (box.y2 * pCell);
-
             double rad = Math.toRadians(this.rotationAngle);
             double cos = Math.cos(rad);
             double sin = Math.sin(rad);
 
-            double localX = screenX1 - cx;
-            double localY = (screenY2 + 6) - cy;
+            // Трансформируем 4 угла рамки в экранное пространство
+            double rx1 = canvasScreenLeft + box.x1 * pCell - cx;
+            double ry1 = renderY + box.y1 * pCell - cy;
+            double rx2 = canvasScreenLeft + box.x2 * pCell - cx;
+            double ry2 = renderY + box.y2 * pCell - cy;
 
-            int toolbarX = (int) (cx + (localX * cos - localY * sin));
-            int toolbarY = (int) (cy + (localX * sin + localY * cos));
+            double sy1 = cy + (rx1 * sin + ry1 * cos);
+            double sy2 = cy + (rx2 * sin + ry1 * cos);
+            double sy3 = cy + (rx1 * sin + ry2 * cos);
+            double sy4 = cy + (rx2 * sin + ry2 * cos);
+
+            // Находим самое нижнее Y-положение на экране
+            int maxY = (int) Math.max(Math.max(sy1, sy2), Math.max(sy3, sy4));
+
+            double midRx = (rx1 + rx2) / 2.0;
+            double midRy = (ry1 + ry2) / 2.0;
+            double screenCenterX = cx + (midRx * cos - midRy * sin);
+
+            int toolbarX = (int) screenCenterX - 75;
+            int toolbarY = maxY + 8;
 
             toolbarX = Math.max(10, Math.min(this.width - 160, toolbarX));
             toolbarY = Math.max(10, Math.min(this.height - 40, toolbarY));
@@ -940,7 +959,7 @@ public class SketchbookScreen extends Screen {
             guiGraphics.fill(toolbarX + 132, toolbarY + 3, toolbarX + 144, toolbarY + 17, 0xFFB22222);
             guiGraphics.drawString(this.font, "x", toolbarX + 136, toolbarY + 5, 0xFFFFFFFF, false);
 
-            if (hasColorPencil) {
+            if (hasColorPencil || hasColorMarker) {
                 int colorBarY = toolbarY + 20;
                 guiGraphics.fill(toolbarX, colorBarY, toolbarX + 150, colorBarY + 12, 0xE0000000);
 

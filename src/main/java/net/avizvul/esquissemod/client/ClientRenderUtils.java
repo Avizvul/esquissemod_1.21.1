@@ -16,13 +16,13 @@ public class ClientRenderUtils {
     public static void renderCachedSketch(GuiGraphics guiGraphics, SketchData data, int startX, int startY, int drawWidth, int drawHeight) {
         if (data == null || data.isEmpty()) return;
 
-        // 1. Отрисовка растровых пикселей
+        // 1. Отрисовка растра
         ResourceLocation texture = SketchTextureCache.getOrCreateTexture(data);
         if (texture != null) {
             guiGraphics.blit(texture, startX, startY, 0.0f, 0.0f, drawWidth, drawHeight, drawWidth, drawHeight);
         }
 
-        // 2. Отрисовка векторного текста поверх растра с учетом отступа +2px
+        // 2. Отрисовка векторного текста поверх растра с поддержкой вертикального режима
         List<TextElement> texts = data.getTextElements();
         if (texts != null && !texts.isEmpty()) {
             Font font = Minecraft.getInstance().font;
@@ -30,18 +30,22 @@ public class ClientRenderUtils {
             double scaleY = (double) drawHeight / 192.0;
 
             for (TextElement elem : texts) {
-                // Синхронизируем отступ +2px с альбомом SketchbookScreen
                 int elemX = startX + (int) ((elem.x() + 2) * scaleX);
                 int elemY = startY + (int) ((elem.y() + 2) * scaleY);
 
                 Component comp = Component.literal(elem.text());
                 int maxW = Math.max(10, (int) ((125 - elem.x() - 2) * scaleX / elem.scale()));
                 List<FormattedCharSequence> lines = font.split(comp, maxW);
-
                 int lineH = (int) (9 * elem.scale() * scaleY);
+
                 for (int l = 0; l < lines.size(); l++) {
                     guiGraphics.pose().pushPose();
-                    guiGraphics.pose().translate(elemX, elemY + l * lineH, 0);
+                    if (elem.isVertical()) {
+                        guiGraphics.pose().translate(elemX - l * lineH, elemY, 0);
+                        guiGraphics.pose().mulPose(com.mojang.math.Axis.ZP.rotationDegrees(90f));
+                    } else {
+                        guiGraphics.pose().translate(elemX, elemY + l * lineH, 0);
+                    }
                     guiGraphics.pose().scale(elem.scale() * (float) scaleX, elem.scale() * (float) scaleY, 1.0f);
                     guiGraphics.drawString(font, lines.get(l), 0, 0, elem.color(), false);
                     guiGraphics.pose().popPose();

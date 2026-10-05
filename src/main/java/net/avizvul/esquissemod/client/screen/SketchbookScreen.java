@@ -438,11 +438,7 @@ public class SketchbookScreen extends Screen {
                     guiGraphics.pose().pushPose();
                     guiGraphics.pose().translate(elemX, elemY, 0);
 
-                    // Компенсируем поворот скетчбука, чтобы запечённый текст сохранял ориентацию экрана
-                    if (this.rotationAngle != 0.0f) {
-                        guiGraphics.pose().mulPose(com.mojang.math.Axis.ZP.rotationDegrees(-this.rotationAngle));
-                    }
-                    // Применяем собственный поворот текста
+                    // Запечённый текст вращается строго со скетчбуком + свой собственный угол elem.rotation()
                     if (elem.rotation() != 0.0f) {
                         guiGraphics.pose().mulPose(com.mojang.math.Axis.ZP.rotationDegrees(elem.rotation()));
                     }
@@ -541,7 +537,7 @@ public class SketchbookScreen extends Screen {
         int blueZoneTop = renderY;
         int blueZoneBottom = renderY + (this.canvasHeight * this.scale);
 
-    double[] lMouseMain = getLogicalMouse(mouseX, mouseY);
+        double[] lMouseMain = getLogicalMouse(mouseX, mouseY);
         if (lMouseMain[0] >= blueZoneLeft && lMouseMain[0] <= blueZoneRight && lMouseMain[1] >= blueZoneTop && lMouseMain[1] <= blueZoneBottom) {
             int dashLength = 5, dashGap = 3, lineWidth = 2, color = 0xFFEE0000;
             int lineX = blueZoneLeft + (blueZoneWidth / 2) - (lineWidth / 2);
@@ -572,9 +568,6 @@ public class SketchbookScreen extends Screen {
 
             // Запечённый текст
             renderSavedTextElements(guiGraphics, canvasScreenLeft, renderY);
-
-            // Активное текстовое поле
-            textEditor.renderActiveBoxTextContent(guiGraphics, this.font, pCell, canvasScreenLeft, renderY, getActiveTextColorArgb(), this.rotationAngle);
 
             net.avizvul.esquissemod.client.StencilBufferUtils.endMask(guiGraphics);
             com.mojang.blaze3d.systems.RenderSystem.disableBlend();
@@ -684,8 +677,11 @@ public class SketchbookScreen extends Screen {
         Tool effectiveTool = (this.activeTool == Tool.TEXT) ? this.previousDrawingTool : this.activeTool;
         boolean isColorTool = (effectiveTool == Tool.COLOR_PENCIL || effectiveTool == Tool.COLOR_MARKER);
 
-        // Рендер панели форматирования в экранных координатах
-        textEditor.renderFormattingToolbar(guiGraphics, this.font, pCell, canvasScreenLeft, renderY, this.width, this.height, isColorTool, this.rotationAngle);
+        //Рендер рендер активного поля ввода, ручек поля и панели форматирования
+        textEditor.renderActiveBoxTextContent(guiGraphics, this.font, pCell, canvasScreenLeft, renderY, getActiveTextColorArgb());
+        textEditor.renderActiveBoxHandles(guiGraphics, this.font, pCell, canvasScreenLeft, renderY);
+        textEditor.renderFormattingToolbar(guiGraphics, this.font, pCell, canvasScreenLeft, renderY, this.width, this.height, isColorTool);
+
 
         // Номер страницы
         String pageText = String.valueOf(this.currentPageIndex + 1);
@@ -1282,11 +1278,11 @@ public class SketchbookScreen extends Screen {
                 if (textEditor.isTextModeActive()) {
                     boolean handled = textEditor.mouseClicked(
                             mouseX, mouseY, lMouseX, lMouseY, button, pCell, canvasScreenLeft, renderY, this.width, this.height, isColorTool,
-                            this.rotationAngle,
                             this::commitTextToCanvas, () -> textEditor.setTextModeActive(false)
                     );
                     if (handled) return true;
                 }
+
 
                 SketchData currentData = SketchData.fromArrayAndTexts(this.pixels, this.textElements);
 
@@ -1342,7 +1338,7 @@ public class SketchbookScreen extends Screen {
         // --- 3. ВЗАИМОДЕЙСТВИЕ С АКТИВНОЙ ТЕКСТОВОЙ РАМКОЙ И ПАНЕЛЬЮ ---
         if (textEditor.isTextModeActive()) {
             boolean handled = textEditor.mouseClicked(
-                    mouseX, mouseY, lMouseX, lMouseY, button, pCell, canvasScreenLeft, renderY, this.width, this.height, isColorTool, this.rotationAngle,
+                    mouseX, mouseY, lMouseX, lMouseY, button, pCell, canvasScreenLeft, renderY, this.width, this.height, isColorTool,
                     this::commitTextToCanvas, () -> textEditor.setTextModeActive(false)
             );
             if (handled) return true;

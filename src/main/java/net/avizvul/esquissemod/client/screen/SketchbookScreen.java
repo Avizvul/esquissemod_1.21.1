@@ -473,6 +473,9 @@ public class SketchbookScreen extends Screen {
         int drawWidth = this.fileWidth * this.scale;
         int drawHeight = this.fileHeight * this.scale;
 
+        int screenWidth = this.canvasWidth * this.scale;
+        int screenHeight = this.canvasHeight * this.scale;
+
         int canvasScreenLeft = renderX + ((this.frameWidth + this.deadZoneWidth) * this.scale);
         int canvasScreenTop = renderY;
 
@@ -558,18 +561,15 @@ public class SketchbookScreen extends Screen {
 
         if (this.activeCanvasId != null) {
             com.mojang.blaze3d.systems.RenderSystem.enableBlend();
-            int screenWidth = this.canvasWidth * this.scale;
-            int screenHeight = this.canvasHeight * this.scale;
             guiGraphics.blit(this.activeCanvasId, canvasScreenLeft, canvasScreenTop, 0.0f, 0.0f, screenWidth, screenHeight, screenWidth, screenHeight);
 
             net.avizvul.esquissemod.client.StencilBufferUtils.beginMask(guiGraphics, () -> {
                 guiGraphics.fill(canvasScreenLeft, renderY, canvasScreenLeft + screenWidth, renderY + screenHeight, 0xFFFFFFFF);
             });
-
             // Запечённый текст
             renderSavedTextElements(guiGraphics, canvasScreenLeft, renderY);
-
             net.avizvul.esquissemod.client.StencilBufferUtils.endMask(guiGraphics);
+
             com.mojang.blaze3d.systems.RenderSystem.disableBlend();
 
             guiGraphics.pose().pushPose();
@@ -2293,14 +2293,6 @@ public class SketchbookScreen extends Screen {
         return (alpha << 24) | (rgb & 0xFFFFFF);
     }
 
-    @Override
-    public boolean charTyped(char codePoint, int modifiers) {
-        if (textEditor.charTyped(codePoint)) {
-            return true;
-        }
-        return super.charTyped(codePoint, modifiers);
-    }
-
     private void commitTextToCanvas() {
         double pCell = (double) this.scale / this.resolutionMultiplier;
         int renderX = (int) this.exactGuiLeft;
@@ -2318,6 +2310,7 @@ public class SketchbookScreen extends Screen {
             this.isCanvasDirty = true;
         }
     }
+
 
 //_________________________________________________________________________________
 

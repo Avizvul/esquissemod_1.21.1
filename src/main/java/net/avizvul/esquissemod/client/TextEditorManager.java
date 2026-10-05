@@ -4,7 +4,6 @@ import net.avizvul.esquissemod.client.screen.SketchbookScreen.TextBoxState;
 import net.avizvul.esquissemod.component.TextElement;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.world.item.ItemStack;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.List;
@@ -45,9 +44,9 @@ public class TextEditorManager {
     }
 
     // =========================================================================
-    // 1. ОТРИСОВКА ВНУТРИ ХОЛСТА (Поворачивается и обрезается вместе с бумагой)
+    // 1. ОТРИСОВКА ТЕКСТА ВНУТРИ STENCIL BUFFER (Обрезается краем холста)
     // =========================================================================
-    public void renderActiveBoxInCanvas(GuiGraphics guiGraphics, Font font, double pCell, int canvasScreenLeft, int renderY, int textColor) {
+    public void renderActiveBoxTextContent(GuiGraphics guiGraphics, Font font, double pCell, int canvasScreenLeft, int renderY, int textColor, float sketchbookRotation) {
         if (!this.isTextModeActive || this.activeTextBox == null) return;
 
         TextBoxState box = this.activeTextBox;
@@ -84,22 +83,38 @@ public class TextEditorManager {
             }
         }
 
-        // 1.2. Отрисовка строк текста
+        // 1.2. Отрисовка строк (Фиксировано относительно экрана через компенсационный поворот)
         for (int l = 0; l < lines.size(); l++) {
             TextBoxState.TextLine line = lines.get(l);
             guiGraphics.pose().pushPose();
+
+            int textOriginX = screenX1 + 2;
+            int textOriginY = screenY1 + 2 + l * lineH;
+
             if (rotStep == 1) {
-                guiGraphics.pose().translate(screenX2 - 2 - l * lineH, screenY1 + 2, 0);
-                guiGraphics.pose().mulPose(com.mojang.math.Axis.ZP.rotationDegrees(90f));
+                textOriginX = screenX2 - 2 - l * lineH;
+                textOriginY = screenY1 + 2;
             } else if (rotStep == 2) {
-                guiGraphics.pose().translate(screenX2 - 2, screenY2 - 2 - l * lineH, 0);
-                guiGraphics.pose().mulPose(com.mojang.math.Axis.ZP.rotationDegrees(180f));
+                textOriginX = screenX2 - 2;
+                textOriginY = screenY2 - 2 - l * lineH;
             } else if (rotStep == 3) {
-                guiGraphics.pose().translate(screenX1 + 2 + l * lineH, screenY2 - 2, 0);
-                guiGraphics.pose().mulPose(com.mojang.math.Axis.ZP.rotationDegrees(270f));
-            } else {
-                guiGraphics.pose().translate(screenX1 + 2, screenY1 + 2 + l * lineH, 0);
+                textOriginX = screenX1 + 2 + l * lineH;
+                textOriginY = screenY2 - 2;
             }
+
+            guiGraphics.pose().translate(textOriginX, textOriginY, 0);
+
+            // Компенсируем поворот скетчбука, чтобы текст лежал горизонтально экрану
+            if (sketchbookRotation != 0.0f) {
+                guiGraphics.pose().mulPose(com.mojang.math.Axis.ZP.rotationDegrees(-sketchbookRotation));
+            }
+
+            // Применяем собственный поворот текстового поля (0°, 90°, 180°, 270°)
+            float textAngle = rotStep * 90.0f;
+            if (textAngle != 0.0f) {
+                guiGraphics.pose().mulPose(com.mojang.math.Axis.ZP.rotationDegrees(textAngle));
+            }
+
             guiGraphics.pose().scale(renderScale, renderScale, 1.0f);
             guiGraphics.drawString(font, line.formattedText, 0, 0, textColor, false);
             guiGraphics.pose().popPose();
@@ -124,8 +139,20 @@ public class TextEditorManager {
                 guiGraphics.fill(caretX, caretY, caretX + 1, caretY + lineH, 0xFFFFFFFF);
             }
         }
+    }
 
-        // 1.4. Рамка и РУЧКА ПЕРЕМЕЩЕНИЯ "≡"
+    // =========================================================================
+    // 2. ОТРИСОВКА РАМОК И РУЧЕК ВНЕ STENCIL BUFFER (Не обрезаются листом)
+    // =========================================================================
+    public void renderActiveBoxHandles(GuiGraphics guiGraphics, Font font, double pCell, int canvasScreenLeft, int renderY) {
+        if (!this.isTextModeActive || this.activeTextBox == null) return;
+
+        TextBoxState box = this.activeTextBox;
+        int screenX1 = canvasScreenLeft + (int) (box.x1 * pCell);
+        int screenY1 = renderY + (int) (box.y1 * pCell);
+        int screenX2 = canvasScreenLeft + (int) (box.x2 * pCell);
+        int screenY2 = renderY + (int) (box.y2 * pCell);
+
         int dashLen = 4, dashGap = 2, outlineColor = 0xFF007ACC;
         for (int px = screenX1; px < screenX2; px += dashLen + dashGap) {
             guiGraphics.fill(px, screenY1, Math.min(px + dashLen, screenX2), screenY1 + 1, outlineColor);
@@ -136,7 +163,7 @@ public class TextEditorManager {
             guiGraphics.fill(screenX2, py, screenX2 + 1, Math.min(py + dashLen, screenY2), outlineColor);
         }
 
-        // РУЧКА ПЕРЕМЕЩЕНИЯ (Плашка "≡" над рамкой)
+        // Ручка перемещения "≡"
         guiGraphics.fill(screenX1, screenY1 - 6, screenX2 - 12, screenY1, 0xFF007ACC);
         guiGraphics.drawString(font, "≡", screenX1 + 2, screenY1 - 6, 0xFFFFFFFF, false);
 
@@ -152,20 +179,32 @@ public class TextEditorManager {
     }
 
     // =========================================================================
-    // 2. ОТРИСОВКА ПАНЕЛИ ФОРМАТИРОВАНИЯ (На экране, не вращается)
+    // 3. ОТРИСОВКА ПАНЕЛИ ФОРМАТИРОВАНИЯ (В экранных координатах)
     // =========================================================================
-    public void renderFormattingToolbar(GuiGraphics guiGraphics, Font font, double pCell, int canvasScreenLeft, int renderY, int screenWidth, int screenHeight, boolean isColorTool) {
+    public void renderFormattingToolbar(GuiGraphics guiGraphics, Font font, double pCell, int canvasScreenLeft, int renderY, int screenWidth, int screenHeight, boolean isColorTool, float sketchbookRotation) {
         if (!this.isTextModeActive || this.activeTextBox == null) return;
 
         TextBoxState box = this.activeTextBox;
-        int screenX1 = canvasScreenLeft + (int) (box.x1 * pCell);
-        int screenX2 = canvasScreenLeft + (int) (box.x2 * pCell);
-        int screenY2 = renderY + (int) (box.y2 * pCell);
 
-        int toolbarX = (screenX1 + screenX2) / 2 - 75;
-        int toolbarY = screenY2 + 8;
-        toolbarX = Math.max(10, Math.min(screenWidth - 160, toolbarX));
-        toolbarY = Math.max(10, Math.min(screenHeight - 40, toolbarY));
+        // Вычисляем настоящие экранные координаты центра нижней грани текстовой рамки
+        double localBoxCenterX = canvasScreenLeft + (int) ((box.x1 + box.x2) / 2.0 * pCell);
+        double localBoxBottomY = renderY + (int) (box.y2 * pCell);
+
+        double cx = canvasScreenLeft + (63 * (pCell * 2)) / 2.0;
+        double cy = renderY + (96 * (pCell * 2)) / 2.0;
+
+        double rad = Math.toRadians(sketchbookRotation);
+        double cos = Math.cos(rad);
+        double sin = Math.sin(rad);
+
+        double dx = localBoxCenterX - cx;
+        double dy = localBoxBottomY - cy;
+
+        double realScreenX = cx + (dx * cos - dy * sin);
+        double realScreenY = cy + (dx * sin + dy * cos);
+
+        int toolbarX = (int) Math.max(10, Math.min(screenWidth - 160, realScreenX - 75));
+        int toolbarY = (int) Math.max(10, Math.min(screenHeight - 40, realScreenY + 8));
 
         guiGraphics.fill(toolbarX, toolbarY, toolbarX + 150, toolbarY + 20, 0xE0000000);
 
@@ -222,24 +261,34 @@ public class TextEditorManager {
     }
 
     // =========================================================================
-    // 3. ОБРАБОТКА КЛИКОВ МЫШИ (с разделением rawMouse и lMouse)
+    // 4. ОБРАБОТКА КЛИКОВ МЫШИ
     // =========================================================================
-    public boolean mouseClicked(double rawMouseX, double rawMouseY, double lMouseX, double lMouseY, int button, double pCell, int canvasScreenLeft, int renderY, int screenWidth, int screenHeight, boolean isColorTool, Runnable onCommit, Runnable onCancel) {
+    public boolean mouseClicked(double rawMouseX, double rawMouseY, double lMouseX, double lMouseY, int button, double pCell, int canvasScreenLeft, int renderY, int screenWidth, int screenHeight, boolean isColorTool, float sketchbookRotation, Runnable onCommit, Runnable onCancel) {
         if (!this.isTextModeActive || this.activeTextBox == null) return false;
 
         TextBoxState box = this.activeTextBox;
-        int screenX1 = canvasScreenLeft + (int) (box.x1 * pCell);
-        int screenY1 = renderY + (int) (box.y1 * pCell);
-        int screenX2 = canvasScreenLeft + (int) (box.x2 * pCell);
-        int screenY2 = renderY + (int) (box.y2 * pCell);
 
-        int toolbarX = (screenX1 + screenX2) / 2 - 75;
-        int toolbarY = screenY2 + 8;
-        toolbarX = Math.max(10, Math.min(screenWidth - 160, toolbarX));
-        toolbarY = Math.max(10, Math.min(screenHeight - 40, toolbarY));
+        double localBoxCenterX = canvasScreenLeft + (int) ((box.x1 + box.x2) / 2.0 * pCell);
+        double localBoxBottomY = renderY + (int) (box.y2 * pCell);
+
+        double cx = canvasScreenLeft + (63 * (pCell * 2)) / 2.0;
+        double cy = renderY + (96 * (pCell * 2)) / 2.0;
+
+        double rad = Math.toRadians(sketchbookRotation);
+        double cos = Math.cos(rad);
+        double sin = Math.sin(rad);
+
+        double dx = localBoxCenterX - cx;
+        double dy = localBoxBottomY - cy;
+
+        double realScreenX = cx + (dx * cos - dy * sin);
+        double realScreenY = cy + (dx * sin + dy * cos);
+
+        int toolbarX = (int) Math.max(10, Math.min(screenWidth - 160, realScreenX - 75));
+        int toolbarY = (int) Math.max(10, Math.min(screenHeight - 40, realScreenY + 8));
         int colorBarY = toolbarY + 20;
 
-        // 3.1. Панель форматирования (проверяется по ЭКРАННЫМ rawMouseX/Y)
+        // 4.1. Клик по кнопкам панели форматирования
         if (rawMouseY >= toolbarY && rawMouseY <= toolbarY + 20) {
             if (rawMouseX >= toolbarX + 4 && rawMouseX <= toolbarX + 16) { box.applyFormattingCode("§l"); return true; }
             if (rawMouseX >= toolbarX + 18 && rawMouseX <= toolbarX + 30) { box.applyFormattingCode("§o"); return true; }
@@ -253,7 +302,7 @@ public class TextEditorManager {
             if (rawMouseX >= toolbarX + 132 && rawMouseX <= toolbarX + 144) { onCancel.run(); return true; }
         }
 
-        // 3.2. Палитра цветов (проверяется по ЭКРАННЫМ rawMouseX/Y)
+        // 4.2. Клик по палитре красителей
         if (isColorTool && rawMouseY >= colorBarY && rawMouseY <= colorBarY + 12) {
             for (int colorId = 0; colorId < 16; colorId++) {
                 int colorX = toolbarX + 6 + colorId * 8;
@@ -265,27 +314,28 @@ public class TextEditorManager {
             }
         }
 
-        // 3.3. Элементы управления текстовой рамки (проверяются по ЛОГИЧЕСКИМ lMouseX/Y)
+        // 4.3. Клик по ручкам управления рамкой (на холсте)
+        int screenX1 = canvasScreenLeft + (int) (box.x1 * pCell);
+        int screenY1 = renderY + (int) (box.y1 * pCell);
+        int screenX2 = canvasScreenLeft + (int) (box.x2 * pCell);
+        int screenY2 = renderY + (int) (box.y2 * pCell);
+
         if (button == 0) {
             int handleSize = 8;
-            // Красный уголок ресайза
             if (lMouseX >= screenX2 - handleSize && lMouseX <= screenX2 + handleSize && lMouseY >= screenY2 - handleSize && lMouseY <= screenY2 + handleSize) {
                 this.isTextBoxResizing = true;
                 return true;
             }
-            // Кнопка поворота
             if (lMouseX >= screenX2 - 12 && lMouseX <= screenX2 + 4 && lMouseY >= screenY1 - 6 && lMouseY <= screenY1 + 2) {
                 box.toggleOrientation();
                 return true;
             }
-            // Плашка перетаскивания "≡"
             if (lMouseX >= screenX1 && lMouseX <= screenX2 - 12 && lMouseY >= screenY1 - 6 && lMouseY <= screenY1 + 2) {
                 this.isTextBoxDragging = true;
                 this.textBoxDragStartX = lMouseX - screenX1;
                 this.textBoxDragStartY = lMouseY - screenY1;
                 return true;
             }
-            // Внутри рамки
             if (lMouseX >= screenX1 && lMouseX <= screenX2 && lMouseY >= screenY1 && lMouseY <= screenY2) {
                 this.isTextSelectingWithMouse = true;
                 return true;
@@ -432,10 +482,8 @@ public class TextEditorManager {
             int localY = (int) Math.round((unrotatedY - renderY) / pCell);
 
             float textScreenAngle = rotStep * 90.0f;
-            float finalRotation = (textScreenAngle - rotationAngle) % 360.0f;
-            if (finalRotation < 0.0f) finalRotation += 360.0f;
 
-            element = new TextElement(formattedString, localX, localY, box.fontScale, finalArgb, finalRotation);
+            element = new TextElement(formattedString, localX, localY, box.fontScale, finalArgb, textScreenAngle);
         }
 
         this.isTextModeActive = false;

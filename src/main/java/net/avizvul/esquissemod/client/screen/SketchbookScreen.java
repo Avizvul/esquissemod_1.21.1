@@ -437,9 +437,16 @@ public class SketchbookScreen extends Screen {
                     if (lines[l].isEmpty()) continue;
                     guiGraphics.pose().pushPose();
                     guiGraphics.pose().translate(elemX, elemY, 0);
+
+                    // Компенсируем поворот скетчбука, чтобы запечённый текст сохранял ориентацию экрана
+                    if (this.rotationAngle != 0.0f) {
+                        guiGraphics.pose().mulPose(com.mojang.math.Axis.ZP.rotationDegrees(-this.rotationAngle));
+                    }
+                    // Применяем собственный поворот текста
                     if (elem.rotation() != 0.0f) {
                         guiGraphics.pose().mulPose(com.mojang.math.Axis.ZP.rotationDegrees(elem.rotation()));
                     }
+
                     guiGraphics.pose().scale(renderScale, renderScale, 1.0f);
                     guiGraphics.drawString(this.font, lines[l], 0, l * 9, elem.color(), false);
                     guiGraphics.pose().popPose();
@@ -447,6 +454,7 @@ public class SketchbookScreen extends Screen {
             }
         }
     }
+
 
     //_________________________________________________________________________________
 
@@ -566,11 +574,13 @@ public class SketchbookScreen extends Screen {
             renderSavedTextElements(guiGraphics, canvasScreenLeft, renderY);
 
             // Активное текстовое поле
-            textEditor.renderActiveBoxInCanvas(guiGraphics, this.font, pCell, canvasScreenLeft, renderY, getActiveTextColorArgb());
+            textEditor.renderActiveBoxTextContent(guiGraphics, this.font, pCell, canvasScreenLeft, renderY, getActiveTextColorArgb(), this.rotationAngle);
 
             net.avizvul.esquissemod.client.StencilBufferUtils.endMask(guiGraphics);
+            com.mojang.blaze3d.systems.RenderSystem.disableBlend();
 
-            // Предпросмотр кисти
+            textEditor.renderActiveBoxHandles(guiGraphics, this.font, pCell, canvasScreenLeft, renderY);
+
             guiGraphics.pose().pushPose();
             float resScale = 1.0f / this.resolutionMultiplier;
             guiGraphics.pose().scale(resScale, resScale, 1.0f);
@@ -665,12 +675,17 @@ public class SketchbookScreen extends Screen {
             }
 
             guiGraphics.pose().popPose();
-            com.mojang.blaze3d.systems.RenderSystem.disableBlend();
         }
 
         // =========================================================================
         // КОНЕЦ МАТРИЦЫ ПОВОРОТА ХОЛСТА
         // =========================================================================
+
+        Tool effectiveTool = (this.activeTool == Tool.TEXT) ? this.previousDrawingTool : this.activeTool;
+        boolean isColorTool = (effectiveTool == Tool.COLOR_PENCIL || effectiveTool == Tool.COLOR_MARKER);
+
+        // Рендер панели форматирования в экранных координатах
+        textEditor.renderFormattingToolbar(guiGraphics, this.font, pCell, canvasScreenLeft, renderY, this.width, this.height, isColorTool, this.rotationAngle);
 
         // Номер страницы
         String pageText = String.valueOf(this.currentPageIndex + 1);
@@ -705,7 +720,6 @@ public class SketchbookScreen extends Screen {
         if (hasMagGlass) renderToolButton(guiGraphics, mouseX, mouseY, this.isMagnifierLocked, MAGGLASS_BTN_TEX, toolCoords.magGlassX());
         if (hasCompass) renderToolButton(guiGraphics, mouseX, mouseY, this.compassState != CompassState.INACTIVE, COMPASS_BTN_TEX, toolCoords.compassX());
 
-        Tool effectiveTool = (this.activeTool == Tool.TEXT) ? this.previousDrawingTool : this.activeTool;
         int activeToolX = switch (effectiveTool) {
             case PENCIL -> toolCoords.pencilX();
             case COLOR_PENCIL -> toolCoords.colorPencilX();
@@ -1264,15 +1278,15 @@ public class SketchbookScreen extends Screen {
         int tearHitMargin = 4;
         if (lMouseX >= (blueZoneLeft - tearHitMargin) && lMouseX <= (blueZoneLeft + blueZoneWidth + tearHitMargin) && lMouseY >= blueZoneTop && lMouseY <= blueZoneBottom) {
             if (button == 1) {
+
                 if (textEditor.isTextModeActive()) {
                     boolean handled = textEditor.mouseClicked(
                             mouseX, mouseY, lMouseX, lMouseY, button, pCell, canvasScreenLeft, renderY, this.width, this.height, isColorTool,
+                            this.rotationAngle,
                             this::commitTextToCanvas, () -> textEditor.setTextModeActive(false)
                     );
                     if (handled) return true;
                 }
-
-
 
                 SketchData currentData = SketchData.fromArrayAndTexts(this.pixels, this.textElements);
 
@@ -1328,10 +1342,10 @@ public class SketchbookScreen extends Screen {
         // --- 3. ВЗАИМОДЕЙСТВИЕ С АКТИВНОЙ ТЕКСТОВОЙ РАМКОЙ И ПАНЕЛЬЮ ---
         if (textEditor.isTextModeActive()) {
             boolean handled = textEditor.mouseClicked(
-                    mouseX, mouseY, lMouseX, lMouseY, button, pCell, canvasScreenLeft, renderY, this.width, this.height, isColorTool,
+                    mouseX, mouseY, lMouseX, lMouseY, button, pCell, canvasScreenLeft, renderY, this.width, this.height, isColorTool, this.rotationAngle,
                     this::commitTextToCanvas, () -> textEditor.setTextModeActive(false)
             );
-            if (handled) return true; // Клик поглощен, новое окно НЕ создается!
+            if (handled) return true;
         }
 
         // ... далее обработка поворота скетчбука при клике по кнопке ...

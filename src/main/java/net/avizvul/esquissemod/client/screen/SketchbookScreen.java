@@ -581,102 +581,108 @@ public class SketchbookScreen extends Screen {
             textEditor.renderActiveBoxInCanvas(guiGraphics, this.font, pCell, canvasScreenLeft, renderY, getActiveTextColorArgb());
 
             net.avizvul.esquissemod.client.StencilBufferUtils.endMask(guiGraphics);
-            guiGraphics.pose().popPose();
 
-            com.mojang.blaze3d.systems.RenderSystem.disableBlend();
-        }
+            // Предпросмотр кисти
+            guiGraphics.pose().pushPose();
+            float resScale = 1.0f / this.resolutionMultiplier;
+            guiGraphics.pose().scale(resScale, resScale, 1.0f);
 
-        // Предпросмотр кисти
-        guiGraphics.pose().pushPose();
-        float resScale = 1.0f / this.resolutionMultiplier;
-        guiGraphics.pose().scale(resScale, resScale, 1.0f);
+            int scaledCanvasLeft = canvasScreenLeft * this.resolutionMultiplier;
+            int scaledCanvasTop = canvasScreenTop * this.resolutionMultiplier;
+            int scaledCanvasWidth = this.canvasWidth * this.scale;
+            int scaledImageHeight = this.fileHeight * this.scale;
 
-        int scaledCanvasLeft = canvasScreenLeft * this.resolutionMultiplier;
-        int scaledCanvasTop = canvasScreenTop * this.resolutionMultiplier;
-        int scaledCanvasWidth = this.canvasWidth * this.scale;
-        int scaledImageHeight = this.fileHeight * this.scale;
+            //Телеграф кисти
+            double[] lMouseHover = getLogicalMouse(mouseX, mouseY);
+            if (!this.isDragging && !this.isRotating && lMouseHover[0]
+                    >= canvasScreenLeft && lMouseHover[0] < (canvasScreenLeft + scaledCanvasWidth) && lMouseHover[1]
+                    >= renderY && lMouseHover[1] < (renderY + scaledImageHeight)) {
+                boolean canDraw = (this.activeTool == Tool.PENCIL && hasPencil) ||
+                        (this.activeTool == Tool.COLOR_PENCIL && hasPencilColors) ||
+                        (this.activeTool == Tool.COLOR_MARKER && hasMarkerColors) ||
+                        (this.activeTool == Tool.ERASER && hasEraser) ||
+                        (this.activeTool == Tool.SMUDGE && hasSmudge) ||
+                        (this.activeTool == Tool.KNEADED_ERASER && hasKneaded);
 
-    double[] lMouseHover = getLogicalMouse(mouseX, mouseY);
-        if (!this.isDragging && !this.isRotating && lMouseHover[0] >= canvasScreenLeft && lMouseHover[0] < (canvasScreenLeft + scaledCanvasWidth) && lMouseHover[1] >= renderY && lMouseHover[1] < (renderY + scaledImageHeight)) {
-            boolean canDraw = (this.activeTool == Tool.PENCIL && hasPencil) ||
-                    (this.activeTool == Tool.COLOR_PENCIL && hasPencilColors) ||
-                    (this.activeTool == Tool.COLOR_MARKER && hasMarkerColors) ||
-                    (this.activeTool == Tool.ERASER && hasEraser) ||
-                    (this.activeTool == Tool.SMUDGE && hasSmudge) ||
-                    (this.activeTool == Tool.KNEADED_ERASER && hasKneaded);
+                if (canDraw) {
+                    double physicalCellSize = (double) this.scale / this.resolutionMultiplier;
+                    double[] magnetMouse = applyRulerMagnet(mouseX, mouseY);
+                    double[] lMouseMagnet = getLogicalMouse(magnetMouse[0], magnetMouse[1]);
 
-            if (canDraw) {
-                double physicalCellSize = (double) this.scale / this.resolutionMultiplier;
-            double[] magnetMouse = applyRulerMagnet(mouseX, mouseY);
-            double[] lMouseMagnet = getLogicalMouse(magnetMouse[0], magnetMouse[1]);
+                    int centerX = (int) ((lMouseMagnet[0] - canvasScreenLeft) / physicalCellSize);
+                    int centerY = (int) ((lMouseMagnet[1]- renderY) / physicalCellSize);
 
-                int centerX = (int) ((lMouseMagnet[0] - canvasScreenLeft) / physicalCellSize);
-                int centerY = (int) ((lMouseMagnet[1]- renderY) / physicalCellSize);
+                    int currentBrushSize = getBrushSize();
+                    int actualSize = currentBrushSize;
+                    if (this.activeTool == Tool.SMUDGE || this.activeTool == Tool.KNEADED_ERASER) {
+                        actualSize = (currentBrushSize == 1) ? 2 : (currentBrushSize == 2) ? 5 : 12;
+                    }
 
-                int currentBrushSize = getBrushSize();
-                int actualSize = currentBrushSize;
-                if (this.activeTool == Tool.SMUDGE || this.activeTool == Tool.KNEADED_ERASER) {
-                    actualSize = (currentBrushSize == 1) ? 2 : (currentBrushSize == 2) ? 5 : 12;
-                }
+                    int offset = actualSize / 2;
+                    double radius = actualSize / 2.0;
+                    double exactCX = centerX + (actualSize % 2 == 0 ? -0.5 : 0.0);
+                    double exactCY = centerY + (actualSize % 2 == 0 ? -0.5 : 0.0);
 
-                int offset = actualSize / 2;
-                double radius = actualSize / 2.0;
-                double exactCX = centerX + (actualSize % 2 == 0 ? -0.5 : 0.0);
-                double exactCY = centerY + (actualSize % 2 == 0 ? -0.5 : 0.0);
+                    boolean isMarker = (this.activeTool == Tool.COLOR_MARKER);
+                    if (isMarker) {
+                        exactCX = centerX + 0.5;
+                        exactCY = centerY + 0.5;
+                    }
 
-                boolean isMarker = (this.activeTool == Tool.COLOR_MARKER);
-                if (isMarker) {
-                    exactCX = centerX + 0.5;
-                    exactCY = centerY + 0.5;
-                }
+                    int markerRot = isMarker ? getMarkerRotation() : 0;
+                    double angleRad = Math.toRadians(markerRot * 15.0);
+                    double mCos = Math.cos(angleRad);
+                    double mSin = Math.sin(angleRad);
 
-                int markerRot = isMarker ? getMarkerRotation() : 0;
-                double angleRad = Math.toRadians(markerRot * 15.0);
-                double mCos = Math.cos(angleRad);
-                double mSin = Math.sin(angleRad);
+                    double thickness = currentBrushSize + 1.0;
+                    double length = currentBrushSize * 5.0;
 
-                double thickness = currentBrushSize + 1.0;
-                double length = currentBrushSize * 5.0;
+                    int bound = isMarker ? (int) Math.ceil(length / 2.0) + 1 : offset;
+                    int startX = isMarker ? (centerX - bound) : (centerX - offset);
+                    int endX = isMarker ? (centerX + bound) : (centerX - offset + actualSize - 1);
+                    int startY = isMarker ? (centerY - bound) : (centerY - offset);
+                    int endY = isMarker ? (centerY + bound) : (centerY - offset + actualSize - 1);
 
-                int bound = isMarker ? (int) Math.ceil(length / 2.0) + 1 : offset;
-                int startX = isMarker ? (centerX - bound) : (centerX - offset);
-                int endX = isMarker ? (centerX + bound) : (centerX - offset + actualSize - 1);
-                int startY = isMarker ? (centerY - bound) : (centerY - offset);
-                int endY = isMarker ? (centerY + bound) : (centerY - offset + actualSize - 1);
+                    int previewColor = (this.activeTool == Tool.ERASER || this.activeTool == Tool.KNEADED_ERASER) ? 0x60FF0000 : 0x60000000;
 
-                int previewColor = (this.activeTool == Tool.ERASER || this.activeTool == Tool.KNEADED_ERASER) ? 0x60FF0000 : 0x60000000;
+                    if ((this.activeTool == Tool.COLOR_PENCIL && hasPencilColors) || (this.activeTool == Tool.COLOR_MARKER && hasMarkerColors)) {
+                        ItemStack activeStack = (this.activeTool == Tool.COLOR_MARKER) ? getColorMarkerStack() : colorPencilStack;
+                        int activeIndex = activeStack.getOrDefault(net.avizvul.esquissemod.component.ModDataComponents.ACTIVE_COLOR_INDEX.get(), 0);
+                        java.util.List<Integer> toolColors = activeStack.getOrDefault(net.avizvul.esquissemod.component.ModDataComponents.STORED_COLORS.get(), new java.util.ArrayList<>());
+                        int colorId = toolColors.get(Math.abs(activeIndex) % toolColors.size());
+                        previewColor = net.minecraft.world.item.DyeColor.byId(colorId).getTextureDiffuseColor() | 0x60000000;
+                    }
 
-                if ((this.activeTool == Tool.COLOR_PENCIL && hasPencilColors) || (this.activeTool == Tool.COLOR_MARKER && hasMarkerColors)) {
-                    ItemStack activeStack = (this.activeTool == Tool.COLOR_MARKER) ? getColorMarkerStack() : colorPencilStack;
-                    int activeIndex = activeStack.getOrDefault(net.avizvul.esquissemod.component.ModDataComponents.ACTIVE_COLOR_INDEX.get(), 0);
-                    java.util.List<Integer> toolColors = activeStack.getOrDefault(net.avizvul.esquissemod.component.ModDataComponents.STORED_COLORS.get(), new java.util.ArrayList<>());
-                    int colorId = toolColors.get(Math.abs(activeIndex) % toolColors.size());
-                    previewColor = net.minecraft.world.item.DyeColor.byId(colorId).getTextureDiffuseColor() | 0x60000000;
-                }
+                    for (int x = startX; x <= endX; x++) {
+                        for (int y = startY; y <= endY; y++) {
+                            double dx = x - exactCX;
+                            double dy = y - exactCY;
 
-                for (int x = startX; x <= endX; x++) {
-                    for (int y = startY; y <= endY; y++) {
-                        double dx = x - exactCX;
-                        double dy = y - exactCY;
+                            if (isMarker) {
+                                double localX = dx * mCos + dy * mSin;
+                                double localY = -dx * mSin + dy * mCos;
+                                if (Math.abs(localX) >= length / 2.0 || Math.abs(localY) >= thickness / 2.0) continue;
+                            } else {
+                                if ((this.activeTool == Tool.SMUDGE || this.activeTool == Tool.KNEADED_ERASER) && Math.sqrt(dx * dx + dy * dy) > radius) continue;
+                            }
 
-                        if (isMarker) {
-                            double localX = dx * mCos + dy * mSin;
-                            double localY = -dx * mSin + dy * mCos;
-                            if (Math.abs(localX) >= length / 2.0 || Math.abs(localY) >= thickness / 2.0) continue;
-                        } else {
-                            if ((this.activeTool == Tool.SMUDGE || this.activeTool == Tool.KNEADED_ERASER) && Math.sqrt(dx * dx + dy * dy) > radius) continue;
-                        }
-
-                        if (x >= 0 && x < this.canvasWidth * this.resolutionMultiplier && y >= 0 && y < this.canvasHeight * this.resolutionMultiplier) {
-                            int drawPixelX = scaledCanvasLeft + (x * this.scale);
-                            int drawPixelY = scaledCanvasTop + (y * this.scale);
-                            guiGraphics.fill(drawPixelX, drawPixelY, drawPixelX + this.scale, drawPixelY + this.scale, previewColor);
+                            if (x >= 0 && x < this.canvasWidth * this.resolutionMultiplier && y >= 0 && y < this.canvasHeight * this.resolutionMultiplier) {
+                                int drawPixelX = scaledCanvasLeft + (x * this.scale);
+                                int drawPixelY = scaledCanvasTop + (y * this.scale);
+                                guiGraphics.fill(drawPixelX, drawPixelY, drawPixelX + this.scale, drawPixelY + this.scale, previewColor);
+                            }
                         }
                     }
                 }
             }
+
+            guiGraphics.pose().popPose();
+            com.mojang.blaze3d.systems.RenderSystem.disableBlend();
         }
-        guiGraphics.pose().popPose();
+
+        // =========================================================================
+        // КОНЕЦ МАТРИЦЫ ПОВОРОТА ХОЛСТА
+        // =========================================================================
 
         // Номер страницы
         String pageText = String.valueOf(this.currentPageIndex + 1);
@@ -1371,11 +1377,12 @@ public class SketchbookScreen extends Screen {
             if (button == 1) {
                 if (textEditor.isTextModeActive()) {
                     boolean handled = textEditor.mouseClicked(
-                            mouseX, mouseY, button, pCell, canvasScreenLeft, renderY, this.width, this.height, isColorTool,
+                            lMouseX, lMouseY, button, pCell, canvasScreenLeft, renderY, this.width, this.height, isColorTool,
                             this::commitTextToCanvas, () -> textEditor.setTextModeActive(false)
                     );
                     if (handled) return true;
                 }
+
 
                 SketchData currentData = SketchData.fromArrayAndTexts(this.pixels, this.textElements);
 
@@ -1431,8 +1438,8 @@ public class SketchbookScreen extends Screen {
         // --- 3. ВЗАИМОДЕЙСТВИЕ С АКТИВНОЙ ТЕКСТОВОЙ РАМКОЙ И ПАНЕЛЬЮ ---
         if (this.activeTool == Tool.TEXT && !textEditor.isTextModeActive() && button == 0) {
             double physicalCellSize = (double) this.scale / this.resolutionMultiplier;
-            int canvasX = (int) ((logicalMouse[0] - canvasScreenLeft) / physicalCellSize);
-            int canvasY = (int) ((logicalMouse[1] - renderY) / physicalCellSize);
+            int canvasX = (int) ((lMouseX - canvasScreenLeft) / physicalCellSize);
+            int canvasY = (int) ((lMouseY - renderY) / physicalCellSize);
 
             if (canvasX >= 0 && canvasX < 126 && canvasY >= 0 && canvasY < 192) {
                 textEditor.createNewTextBox(canvasX, canvasY);
@@ -1440,8 +1447,7 @@ public class SketchbookScreen extends Screen {
             }
         }
 
-
-// ... далее обработка поворота скетчбука при клике по кнопке ...
+        // ... далее обработка поворота скетчбука при клике по кнопке ...
         if (lMouseX >= btnX && lMouseX < btnX + (btnFileWidth * this.scale) && lMouseY >= btnY && lMouseY < btnY + (btnFileHeight * this.scale)) {
             if (button == 0) {
                 this.isRotating = true;

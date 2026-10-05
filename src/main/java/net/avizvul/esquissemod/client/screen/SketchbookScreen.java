@@ -124,12 +124,7 @@ public class SketchbookScreen extends Screen {
     private net.minecraft.resources.ResourceLocation activeCanvasId;
     private boolean isCanvasDirty = true;
 
-    private TextBoxState activeTextBox = null;
-    private boolean isTextModeActive = false;
-
     private Tool previousDrawingTool = Tool.PENCIL; // Хранит инструмент (простой или цветной карандаш)
-    private boolean isTextBoxDragging = false;       // Флаг перемещения текстового поля зажатием
-    private boolean isTextBoxResizing = false;       // Флаг изменения размера текстового поля зажатием
     private boolean isTextSelectingWithMouse = false;
     private double textBoxDragStartX, textBoxDragStartY;
     private boolean isTextCreatingWithDrag = false;
@@ -294,11 +289,6 @@ public class SketchbookScreen extends Screen {
             return;
         }
 
-        // 1. Запекаем текст, если пользователем открыто текстовое поле
-        if (this.isTextModeActive && this.activeTextBox != null) {
-            commitTextToCanvas();
-        }
-
         // 2. Сохраняем текущую страницу
         if (this.currentPageIndex >= 0 && this.currentPageIndex < pagesList.size()) {
             net.avizvul.esquissemod.component.SketchData data = net.avizvul.esquissemod.component.SketchData.fromArrayAndTexts(this.pixels, this.textElements);
@@ -457,8 +447,6 @@ public class SketchbookScreen extends Screen {
             }
         }
     }
-
-
 
     //_________________________________________________________________________________
 
@@ -830,105 +818,6 @@ public class SketchbookScreen extends Screen {
                     guiGraphics, screenAnchorX, screenAnchorY, screenPencilX, screenPencilY
             );
         }
-
-        // =========================================================================
-        // 2. ЭКРАННЫЙ РЕНДЕР АКТИВНОГО ТЕКСТОВОГО ПОЛЯ
-        // =========================================================================
-        if (this.isTextModeActive && this.activeTextBox != null) {
-            TextBoxState box = this.activeTextBox;
-
-            // Локальные координаты рамки (PoseStack автоматически повернет их вокруг cx, cy!)
-            int screenX1 = canvasScreenLeft + (int) (box.x1 * pCell);
-            int screenY1 = renderY + (int) (box.y1 * pCell);
-            int screenX2 = canvasScreenLeft + (int) (box.x2 * pCell);
-            int screenY2 = renderY + (int) (box.y2 * pCell);
-
-            float renderScale = (float) (box.fontScale * pCell);
-            int lineH = (int) (9 * renderScale);
-            int textColor = getActiveTextColorArgb();
-
-            int rotStep = (box.rotation % 4 + 4) % 4;
-            boolean isVerticalText = (rotStep == 1 || rotStep == 3);
-            int boxLineLength = isVerticalText ? (screenY2 - screenY1) : (screenX2 - screenX1);
-            int maxW = Math.max(10, (int) ((boxLineLength - 4) / renderScale));
-
-            java.util.List<TextBoxState.TextLine> lines = box.getWrappedLines(this.font, maxW);
-
-            // 1. Отрисовка подсветки выделенного текста
-            if (box.hasSelection()) {
-                int min = box.getSelectionMin();
-                int max = box.getSelectionMax();
-
-                for (int l = 0; l < lines.size(); l++) {
-                    TextBoxState.TextLine line = lines.get(l);
-                    int lineY = screenY1 + 2 + l * lineH;
-                    if (max > line.startCharIndex && min <= line.endCharIndex) {
-                        int selStart = Math.max(min, line.startCharIndex);
-                        int selEnd = Math.min(max, line.endCharIndex);
-                        String textBefore = box.getFormattedSubstring(line.startCharIndex, selStart);
-                        String textSelected = box.getFormattedSubstring(line.startCharIndex, selEnd);
-                        int hX1 = screenX1 + 2 + (int) (this.font.width(textBefore) * renderScale);
-                        int hX2 = screenX1 + 2 + (int) (this.font.width(textSelected) * renderScale);
-                        guiGraphics.fill(hX1, lineY, hX2, lineY + lineH, 0x802266FF);
-                    }
-                }
-            }
-
-            // 2. Отрисовка текста
-            for (int l = 0; l < lines.size(); l++) {
-                TextBoxState.TextLine line = lines.get(l);
-                guiGraphics.pose().pushPose();
-                if (rotStep == 1) {
-                    guiGraphics.pose().translate(screenX2 - 2 - l * lineH, screenY1 + 2, 0);
-                    guiGraphics.pose().mulPose(com.mojang.math.Axis.ZP.rotationDegrees(90f));
-                } else if (rotStep == 2) {
-                    guiGraphics.pose().translate(screenX2 - 2, screenY2 - 2 - l * lineH, 0);
-                    guiGraphics.pose().mulPose(com.mojang.math.Axis.ZP.rotationDegrees(180f));
-                } else if (rotStep == 3) {
-                    guiGraphics.pose().translate(screenX1 + 2 + l * lineH, screenY2 - 2, 0);
-                    guiGraphics.pose().mulPose(com.mojang.math.Axis.ZP.rotationDegrees(270f));
-                } else {
-                    guiGraphics.pose().translate(screenX1 + 2, screenY1 + 2 + l * lineH, 0);
-                }
-                guiGraphics.pose().scale(renderScale, renderScale, 1.0f);
-                guiGraphics.drawString(this.font, line.formattedText, 0, 0, textColor, false);
-                guiGraphics.pose().popPose();
-            }
-
-            // 3. Мигающая каретка (курсор ввода)
-            int caretLineIdx = 0;
-            TextBoxState.TextLine caretLine = lines.get(0);
-            for (int l = 0; l < lines.size(); l++) {
-                TextBoxState.TextLine line = lines.get(l);
-                if (box.caret >= line.startCharIndex && (box.caret <= line.endCharIndex || l == lines.size() - 1)) {
-                    caretLineIdx = l;
-                    caretLine = line;
-                    break;
-                }
-            }
-
-            String textBeforeCaret = box.getFormattedSubstring(caretLine.startCharIndex, box.caret);
-            int caretX = screenX1 + 2 + (int) (this.font.width(textBeforeCaret) * renderScale);
-            int caretY = screenY1 + 2 + caretLineIdx * lineH;
-
-            if (System.currentTimeMillis() / 500 % 2 == 0) {
-                guiGraphics.fill(caretX, caretY, caretX + 1, caretY + lineH, 0xFFFFFFFF);
-            }
-
-            // 4. Пунктирная синяя рамка выделения поля
-            int dashLen = 4, dashGap = 2, outlineColor = 0xFF007ACC;
-            for (int px = screenX1; px < screenX2; px += dashLen + dashGap) {
-                guiGraphics.fill(px, screenY1, Math.min(px + dashLen, screenX2), screenY1 + 1, outlineColor);
-                guiGraphics.fill(px, screenY2, Math.min(px + dashLen, screenX2), screenY2 + 1, outlineColor);
-            }
-            for (int py = screenY1; py < screenY2; py += dashLen + dashGap) {
-                guiGraphics.fill(screenX1, py, screenX1 + 1, Math.min(py + dashLen, screenY2), outlineColor);
-                guiGraphics.fill(screenX2, py, screenX2 + 1, Math.min(py + dashLen, screenY2), outlineColor);
-            }
-        }
-
-        boolean isColorTool = (effectiveTool == Tool.COLOR_PENCIL || effectiveTool == Tool.COLOR_MARKER);
-        textEditor.renderFormattingToolbar(guiGraphics, this.font, pCell, canvasScreenLeft, renderY, this.width, this.height, isColorTool);
     }
 
     //_________________________________________________________________________________
@@ -1436,15 +1325,12 @@ public class SketchbookScreen extends Screen {
         }
 
         // --- 3. ВЗАИМОДЕЙСТВИЕ С АКТИВНОЙ ТЕКСТОВОЙ РАМКОЙ И ПАНЕЛЬЮ ---
-        if (this.activeTool == Tool.TEXT && !textEditor.isTextModeActive() && button == 0) {
-            double physicalCellSize = (double) this.scale / this.resolutionMultiplier;
-            int canvasX = (int) ((lMouseX - canvasScreenLeft) / physicalCellSize);
-            int canvasY = (int) ((lMouseY - renderY) / physicalCellSize);
-
-            if (canvasX >= 0 && canvasX < 126 && canvasY >= 0 && canvasY < 192) {
-                textEditor.createNewTextBox(canvasX, canvasY);
-                return true;
-            }
+        if (textEditor.isTextModeActive()) {
+            boolean handled = textEditor.mouseClicked(
+                    mouseX, mouseY, lMouseX, lMouseY, button, pCell, canvasScreenLeft, renderY, this.width, this.height, isColorTool,
+                    this::commitTextToCanvas, () -> textEditor.setTextModeActive(false)
+            );
+            if (handled) return true; // Клик поглощен, новое окно НЕ создается!
         }
 
         // ... далее обработка поворота скетчбука при клике по кнопке ...
@@ -1460,18 +1346,18 @@ public class SketchbookScreen extends Screen {
         }
 
         // --- 4. СОЗДАНИЕ НОВОГО ТЕКСТОВОГО ПОЛЯ (Только если нет активного) ---
-        if (this.activeTool == Tool.TEXT && !this.isTextModeActive && this.activeTextBox == null && button == 0) {
+        // 3. Создание НОВОГО поля (только если клик по свободной области холста)
+        if (this.activeTool == Tool.TEXT && !textEditor.isTextModeActive() && button == 0) {
             double physicalCellSize = (double) this.scale / this.resolutionMultiplier;
             int canvasX = (int) ((lMouseX - canvasScreenLeft) / physicalCellSize);
             int canvasY = (int) ((lMouseY - renderY) / physicalCellSize);
 
             if (canvasX >= 0 && canvasX < 126 && canvasY >= 0 && canvasY < 192) {
-                this.activeTextBox = new TextBoxState(canvasX, canvasY);
-                this.isTextModeActive = true;
-                this.isTextCreatingWithDrag = true;
+                textEditor.createNewTextBox(canvasX, canvasY);
                 return true;
             }
         }
+
         // === ЗАХВАТ И ВРАЩЕНИЕ ЛИНЕЙКИ ПО ЛКМ ===
         if (button == 0 && this.isRulerActive && !this.isQuickRulerMode) {
             double dx = mouseX - this.rulerX;

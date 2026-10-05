@@ -109,7 +109,8 @@ public class SketchTextureCache {
 
             guiGraphics.pose().popPose();
 
-            // ВАЖНО: Принудительный сброс буфера отрисовки перед скачиванием текстуры!
+            // Принудительный сброс пакетов рендера перед скачиванием пикселей!
+            guiGraphics.flush();
             mc.renderBuffers().bufferSource().endBatch();
 
             NativeImage textImage = new NativeImage(width, height, false);
@@ -121,7 +122,7 @@ public class SketchTextureCache {
             RenderSystem.viewport(0, 0, mc.getWindow().getWidth(), mc.getWindow().getHeight());
             target.destroyBuffers();
 
-            // Альфа-смешивание запечённого текста с рисунком
+            // Альфа-смешивание запечённого текста с пиксельным рисунком
             for (int x = 0; x < width; x++) {
                 for (int y = 0; y < height; y++) {
                     int textAbgr = textImage.getPixelRGBA(x, y);
@@ -133,6 +134,7 @@ public class SketchTextureCache {
                     }
                 }
             }
+
             textImage.close();
         } catch (Exception e) {
             e.printStackTrace();

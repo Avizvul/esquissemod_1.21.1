@@ -351,6 +351,21 @@ public class SketchbookScreen extends Screen {
         return new double[]{logicalX, logicalY};
     }
 
+    private double[] getScreenFromLogical(double lX, double lY) {
+        if (this.rotationAngle == 0.0f) return new double[]{lX, lY};
+        double cx = this.exactGuiLeft + (this.fileWidth * this.scale) / 2.0;
+        double cy = this.exactGuiTop + (this.fileHeight * this.scale) / 2.0;
+        double dx = lX - cx;
+        double dy = lY - cy;
+        double rad = Math.toRadians(this.rotationAngle);
+        double cos = Math.cos(rad);
+        double sin = Math.sin(rad);
+        double screenX = cx + (dx * cos - dy * sin);
+        double screenY = cy + (dx * sin + dy * cos);
+        return new double[]{screenX, screenY};
+    }
+
+
     private net.minecraft.world.item.ItemStack findItemStack(net.minecraft.world.item.Item targetItem) {
         if (this.minecraft == null || this.minecraft.player == null) return net.minecraft.world.item.ItemStack.EMPTY;
         for (net.minecraft.world.item.ItemStack stack : this.minecraft.player.getInventory().items) {
@@ -668,6 +683,12 @@ public class SketchbookScreen extends Screen {
             guiGraphics.pose().popPose();
         }
 
+        // Номер страницы
+        String pageText = String.valueOf(this.currentPageIndex + 1);
+        int textX = renderX + (this.fileWidth * this.scale) - this.font.width(pageText) - 10;
+        int textY = renderY + (this.fileHeight * this.scale) - 15;
+        guiGraphics.drawString(this.font, pageText, textX, textY, 0xFF777777, false);
+        
         guiGraphics.pose().popPose();
         // =========================================================================
         // КОНЕЦ МАТРИЦЫ ПОВОРОТА ХОЛСТА
@@ -680,15 +701,6 @@ public class SketchbookScreen extends Screen {
         textEditor.renderActiveBoxTextContent(guiGraphics, this.font, pCell, canvasScreenLeft, renderY, getActiveTextColorArgb());
         textEditor.renderActiveBoxHandles(guiGraphics, this.font, pCell, canvasScreenLeft, renderY);
         textEditor.renderFormattingToolbar(guiGraphics, this.font, pCell, canvasScreenLeft, renderY, this.width, this.height, isColorTool);
-
-
-        // Номер страницы
-        String pageText = String.valueOf(this.currentPageIndex + 1);
-        int textX = renderX + (this.fileWidth * this.scale) - this.font.width(pageText) - 10;
-        int textY = renderY + (this.fileHeight * this.scale) - 15;
-        guiGraphics.drawString(this.font, pageText, textX, textY, 0xFF777777, false);
-
-        guiGraphics.pose().popPose();
 
         // 6. Подсветка инструментов (Сохраняется активной в режиме (T))
         ToolButtonCoords toolCoords = getToolButtonCoords();

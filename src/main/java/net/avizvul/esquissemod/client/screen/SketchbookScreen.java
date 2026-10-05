@@ -434,6 +434,31 @@ public class SketchbookScreen extends Screen {
         guiGraphics.drawString(this.font, label, x + 3, y + 4, isActive ? 0xFFFFFF00 : 0xFFFFFFFF, false);
     }
 
+    private void renderSavedTextElements(GuiGraphics guiGraphics, int canvasScreenLeft, int renderY) {
+        if (this.textElements != null && !this.textElements.isEmpty()) {
+            double pCell = (double) this.scale / this.resolutionMultiplier;
+            for (TextElement elem : this.textElements) {
+                int elemX = canvasScreenLeft + (int) (elem.x() * pCell);
+                int elemY = renderY + (int) (elem.y() * pCell);
+                float renderScale = (float) (elem.scale() * pCell);
+
+                String[][] lines = new String[][]{elem.text().split("\n", -1)};
+                for (int l = 0; l < lines.length; l++) {
+                    if (lines[l].isEmpty()) continue;
+                    guiGraphics.pose().pushPose();
+                    guiGraphics.pose().translate(elemX, elemY, 0);
+                    if (elem.rotation() != 0.0f) {
+                        guiGraphics.pose().mulPose(com.mojang.math.Axis.ZP.rotationDegrees(elem.rotation()));
+                    }
+                    guiGraphics.pose().scale(renderScale, renderScale, 1.0f);
+                    guiGraphics.drawString(this.font, lines[l], 0, l * 9, elem.color(), false);
+                    guiGraphics.pose().popPose();
+                }
+            }
+        }
+    }
+
+
     //_________________________________________________________________________________
 
     private void renderContent(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
@@ -477,6 +502,8 @@ public class SketchbookScreen extends Screen {
 
         boolean hasPencilColors = hasColorPencil && !colorPencilStack.getOrDefault(ModDataComponents.STORED_COLORS.get(), new java.util.ArrayList<>()).isEmpty();
         boolean hasMarkerColors = hasColorMarker && !getColorMarkerStack().getOrDefault(ModDataComponents.STORED_COLORS.get(), new java.util.ArrayList<>()).isEmpty();
+
+        double pCell = (double) this.scale / this.resolutionMultiplier;
 
         double cx = renderX + drawWidth / 2.0;
         double cy = renderY + drawHeight / 2.0;
@@ -550,7 +577,6 @@ public class SketchbookScreen extends Screen {
             renderSavedTextElements(guiGraphics);
 
             // Активное текстовое поле
-            double pCell = (double) this.scale / this.resolutionMultiplier;
             textEditor.renderActiveBoxInCanvas(guiGraphics, this.font, pCell, canvasScreenLeft, renderY, getActiveTextColorArgb());
 
             net.avizvul.esquissemod.client.StencilBufferUtils.endMask(guiGraphics);
@@ -803,7 +829,6 @@ public class SketchbookScreen extends Screen {
         // =========================================================================
         if (this.isTextModeActive && this.activeTextBox != null) {
             TextBoxState box = this.activeTextBox;
-            double pCell = (double) this.scale / this.resolutionMultiplier;
 
             // Локальные координаты рамки (PoseStack автоматически повернет их вокруг cx, cy!)
             int screenX1 = canvasScreenLeft + (int) (box.x1 * pCell);
@@ -894,10 +919,9 @@ public class SketchbookScreen extends Screen {
                 guiGraphics.fill(screenX2, py, screenX2 + 1, Math.min(py + dashLen, screenY2), outlineColor);
             }
         }
+
         boolean isColorTool = (effectiveTool == Tool.COLOR_PENCIL || effectiveTool == Tool.COLOR_MARKER);
         textEditor.renderFormattingToolbar(guiGraphics, this.font, pCell, canvasScreenLeft, renderY, this.width, this.height, isColorTool);
-
-
     }
 
     //_________________________________________________________________________________
@@ -1297,7 +1321,6 @@ public class SketchbookScreen extends Screen {
         Tool effectiveTool = (this.activeTool == Tool.TEXT) ? this.previousDrawingTool : this.activeTool;
         boolean isColorTool = (effectiveTool == Tool.COLOR_PENCIL || effectiveTool == Tool.COLOR_MARKER);
 
-
         int scaledBtnWidth = toolCoords.scaledBtnWidth();
         int scaledBtnHeight = toolCoords.scaledBtnHeight();
         int pencilX = toolCoords.pencilX();
@@ -1335,8 +1358,9 @@ public class SketchbookScreen extends Screen {
         int blueZoneLeft = renderX + (this.frameWidth * this.scale);
         int blueZoneTop = renderY;
         int blueZoneBottom = renderY + (this.canvasHeight * this.scale);
+        double pCell = (double) this.scale / this.resolutionMultiplier;
 
-    double[] logicalMouse = getLogicalMouse(mouseX, mouseY);
+        double[] logicalMouse = getLogicalMouse(mouseX, mouseY);
         double lMouseX = logicalMouse[0];
         double lMouseY = logicalMouse[1];
 
@@ -1656,6 +1680,7 @@ public class SketchbookScreen extends Screen {
         int renderX = (int) this.exactGuiLeft;
         int renderY = (int) this.exactGuiTop;
         int canvasScreenLeft = renderX + ((this.frameWidth + this.deadZoneWidth) * this.scale);
+        double pCell = (double) this.scale / this.resolutionMultiplier;
 
         // 1. Перемещение скетчбука
         if (this.isDragging) {

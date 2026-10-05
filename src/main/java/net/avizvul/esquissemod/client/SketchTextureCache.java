@@ -3,13 +3,14 @@ package net.avizvul.esquissemod.client;
 import com.mojang.blaze3d.pipeline.TextureTarget;
 import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.vertex.VertexSorting;
+import com.mojang.blaze3d.vertex.ByteBufferBuilder;
 import net.avizvul.esquissemod.component.SketchData;
 import net.avizvul.esquissemod.component.TextElement;
 import net.avizvul.esquissemod.util.ColorUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.resources.ResourceLocation;
 import org.joml.Matrix4f;
@@ -20,7 +21,7 @@ import java.util.Map;
 
 public class SketchTextureCache {
 
-    private static final int MAX_CACHE_SIZE = 50;
+    private static final int MAX_CACHE_SIZE = 100;
 
     private static final Map<Integer, ResourceLocation> CACHE = new LinkedHashMap<>(MAX_CACHE_SIZE + 1, 0.75f, true) {
         @Override
@@ -57,7 +58,7 @@ public class SketchTextureCache {
             }
         }
 
-        // 2. Растрируем векторный текст строго в 126x192 с пиксельной обрезкой на FBO
+        // 2. Растрируем векторный текст строго в 126x192
         List<TextElement> textElements = data.getTextElements();
         if (textElements != null && !textElements.isEmpty()) {
             rasterizeTextOntoImage(image, textElements, w, h);
@@ -84,47 +85,57 @@ public class SketchTextureCache {
             RenderSystem.viewport(0, 0, width, height);
             RenderSystem.backupProjectionMatrix();
             RenderSystem.setProjectionMatrix(
-                    new Matrix4f().setOrtho(0.0f, (float) width, (float) height, 0.0f, 1000.0f, 3000.0f),
-                    VertexSorting.ORTHOGRAPHIC_Z
+                    new Matrix4f().setOrtho(0.0f, (float) width, (float) height, 0.0f, -1000.0f, 1000.0f),
+                    com.mojang.blaze3d.vertex.VertexSorting.ORTHOGRAPHIC_Z
             );
 
-            // Использованием изоляции буфера для предотвращения конфликтов с 3D рендером
-            com.mojang.blaze3d.vertex.ByteBufferBuilder byteBufferBuilder = new com.mojang.blaze3d.vertex.ByteBufferBuilder(256);
-            net.minecraft.client.renderer.MultiBufferSource.BufferSource bufferSource = net.minecraft.client.renderer.MultiBufferSource.immediate(byteBufferBuilder);
+            ByteBufferBuilder byteBufferBuilder = new ByteBufferBuilder(256);
+            MultiBufferSource.BufferSource bufferSource = MultiBufferSource.immediate(byteBufferBuilder);
             GuiGraphics guiGraphics = new GuiGraphics(mc, bufferSource);
 
             for (TextElement elem : textElements) {
+                if (elem.text() == null || elem.text().isEmpty()) continue;
                 String[] lines = elem.text().split("\n", -1);
+
+                guiGraphics.pose().pushPose();
+                // Трансляция и поворот выполняются ЕДИНОЖДЫ для элемента
+                guiGraphics.pose().translate(elem.x(), elem.y(), 0.0f);
+                if (elem.rotation() != 0.0f) {
+                    guiGraphics.pose().mulPose(com.mojang.math.Axis.ZP.rotationDegrees(elem.rotation()));
+                }
+                guiGraphics.pose().scale(elem.scale(), elem.scale(), 1.0f);
+
+                int color = elem.color();
+                if ((color & 0xFF000000) == 0) {
+                    color |= 0xFF000000; // Гарантируем непрозрачность альфа-канала
+                }
+
                 for (int l = 0; l < lines.length; l++) {
                     if (lines[l].isEmpty()) continue;
-                    guiGraphics.pose().pushPose();
-                    guiGraphics.pose().translate(elem.x(), elem.y() + (l * 9), -2000.0f);
-                    if (elem.rotation() != 0.0f) {
-                        guiGraphics.pose().mulPose(com.mojang.math.Axis.ZP.rotationDegrees(elem.rotation()));
-                    }
-                    guiGraphics.pose().scale(elem.scale(), elem.scale(), 1.0f);
-                    guiGraphics.drawString(font, lines[l], 0, 0, elem.color(), false);
-                    guiGraphics.pose().popPose();
+                    // l * 9 передаётся как локальная Y-координата внутри повернутой системы
+                    guiGraphics.drawString(font, lines[l], 0, l * 9, color, false);
                 }
+                guiGraphics.pose().popPose();
             }
 
             guiGraphics.flush();
             bufferSource.endBatch();
 
+            RenderSystem.restoreProjectionMatrix();
+            mc.getMainRenderTarget().bindWrite(true);
+            RenderSystem.viewport(0, 0, mc.getWindow().getWidth(), mc.getWindow().getHeight());
+
             NativeImage textImage = new NativeImage(width, height, false);
             RenderSystem.bindTexture(target.getColorTextureId());
             textImage.downloadTexture(0, false);
 
-            RenderSystem.restoreProjectionMatrix();
-            mc.getMainRenderTarget().bindWrite(true);
-            RenderSystem.viewport(0, 0, mc.getWindow().getWidth(), mc.getWindow().getHeight());
             target.destroyBuffers();
             byteBufferBuilder.close();
 
-            // Пиксельное альфа-смешивание запечённого текста с рисунком
+            // Перенос пикселей с альфа-смешиванием и переворотом по Y
             for (int x = 0; x < width; x++) {
                 for (int y = 0; y < height; y++) {
-                    int textAbgr = textImage.getPixelRGBA(x, y);
+                    int textAbgr = textImage.getPixelRGBA(x, height - 1 - y);
                     int textAlpha = (textAbgr >> 24) & 0xFF;
                     if (textAlpha > 0) {
                         int bgAbgr = baseImage.getPixelRGBA(x, y);

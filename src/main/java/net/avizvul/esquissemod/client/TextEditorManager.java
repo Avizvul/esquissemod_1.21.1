@@ -256,57 +256,67 @@ public class TextEditorManager {
         toolbarX = Math.max(10, Math.min(screenWidth - 160, toolbarX));
         toolbarY = Math.max(10, Math.min(screenHeight - 40, toolbarY));
         int colorBarY = toolbarY + 20;
+        int toolbarHeight = isColorTool ? 32 : 20;
 
-        // 4.1. Клик по кнопкам панели форматирования
-        if (mouseY >= toolbarY && mouseY <= toolbarY + 20) {
-            if (mouseX >= toolbarX + 4 && mouseX <= toolbarX + 16) { box.applyFormattingCode("§l"); return true; }
-            if (mouseX >= toolbarX + 18 && mouseX <= toolbarX + 30) { box.applyFormattingCode("§o"); return true; }
-            if (mouseX >= toolbarX + 32 && mouseX <= toolbarX + 44) { box.applyFormattingCode("§n"); return true; }
-            if (mouseX >= toolbarX + 46 && mouseX <= toolbarX + 58) { box.applyFormattingCode("§m"); return true; }
-            if (mouseX >= toolbarX + 62 && mouseX <= toolbarX + 74) { box.fontScale = Math.max(0.5f, box.fontScale - 0.25f); return true; }
-            if (mouseX >= toolbarX + 76 && mouseX <= toolbarX + 88) { box.fontScale = Math.min(2.0f, box.fontScale + 0.25f); return true; }
-            if (mouseX >= toolbarX + 90 && mouseX <= toolbarX + 102) { box.cycleOpacity(); return true; }
-            if (mouseX >= toolbarX + 104 && mouseX <= toolbarX + 116) { box.toggleOrientation(); return true; }
-            if (mouseX >= toolbarX + 118 && mouseX <= toolbarX + 130) { onCommit.run(); return true; }
-            if (mouseX >= toolbarX + 132 && mouseX <= toolbarX + 144) { onCancel.run(); return true; }
-        }
+        // 1. Клики по панели форматирования
+        if (mouseX >= toolbarX && mouseX <= toolbarX + 150 && mouseY >= toolbarY && mouseY <= toolbarY + toolbarHeight) {
+            // Кнопки верхней строки панели
+            if (mouseY >= toolbarY && mouseY <= toolbarY + 20) {
+                if (mouseX >= toolbarX + 4 && mouseX <= toolbarX + 16) { box.applyFormattingCode("§l"); return true; }
+                if (mouseX >= toolbarX + 18 && mouseX <= toolbarX + 30) { box.applyFormattingCode("§o"); return true; }
+                if (mouseX >= toolbarX + 32 && mouseX <= toolbarX + 44) { box.applyFormattingCode("§n"); return true; }
+                if (mouseX >= toolbarX + 46 && mouseX <= toolbarX + 58) { box.applyFormattingCode("§m"); return true; }
+                if (mouseX >= toolbarX + 62 && mouseX <= toolbarX + 74) { box.fontScale = Math.max(0.5f, box.fontScale - 0.25f); return true; }
+                if (mouseX >= toolbarX + 76 && mouseX <= toolbarX + 88) { box.fontScale = Math.min(2.0f, box.fontScale + 0.25f); return true; }
+                if (mouseX >= toolbarX + 90 && mouseX <= toolbarX + 102) { box.cycleOpacity(); return true; }
+                if (mouseX >= toolbarX + 104 && mouseX <= toolbarX + 116) { box.toggleOrientation(); return true; }
+                if (mouseX >= toolbarX + 118 && mouseX <= toolbarX + 130) { onCommit.run(); return true; } // Зеленая 'v' — запечь текст
+                if (mouseX >= toolbarX + 132 && mouseX <= toolbarX + 144) { onCancel.run(); return true; } // Красная 'x' — отменить
+            }
 
-        // 4.2. Клик по красителям
-        if (isColorTool && mouseY >= colorBarY && mouseY <= colorBarY + 12) {
-            for (int colorId = 0; colorId < 16; colorId++) {
-                int colorX = toolbarX + 6 + colorId * 8;
-                int colorY = colorBarY + 3;
-                if (mouseX >= colorX - 1 && mouseX <= colorX + 6 && mouseY >= colorY - 1 && mouseY <= colorY + 6) {
-                    box.applyColor(colorId);
-                    return true;
+            // Палитра красителей
+            if (isColorTool && mouseY >= colorBarY && mouseY <= colorBarY + 12) {
+                for (int colorId = 0; colorId < 16; colorId++) {
+                    int colorX = toolbarX + 6 + colorId * 8;
+                    int colorY = colorBarY + 3;
+                    if (mouseX >= colorX - 1 && mouseX <= colorX + 6 && mouseY >= colorY - 1 && mouseY <= colorY + 6) {
+                        box.applyColor(colorId);
+                        return true;
+                    }
                 }
             }
+
+            // Клик попал в панель форматирования — поглощаем без действий
+            return true;
         }
 
-        // 4.3. Клик по ручкам управления рамкой
+        // 2. Клики по элементам рамки и внутри поля
         if (button == 0) {
             int handleSize = 8;
+            // Уголок ресайза
             if (mouseX >= screenX2 - handleSize && mouseX <= screenX2 + handleSize && mouseY >= screenY2 - handleSize && mouseY <= screenY2 + handleSize) {
                 this.isTextBoxResizing = true;
                 return true;
             }
+            // Кнопка поворота
             if (mouseX >= screenX2 - 12 && mouseX <= screenX2 + 4 && mouseY >= screenY1 - 6 && mouseY <= screenY1 + 2) {
                 box.toggleOrientation();
                 return true;
             }
+            // Плашка перетаскивания "≡"
             if (mouseX >= screenX1 && mouseX <= screenX2 - 12 && mouseY >= screenY1 - 6 && mouseY <= screenY1 + 2) {
                 this.isTextBoxDragging = true;
                 this.textBoxDragStartX = mouseX - screenX1;
                 this.textBoxDragStartY = mouseY - screenY1;
                 return true;
             }
+            // Внутри рамки текста
             if (mouseX >= screenX1 && mouseX <= screenX2 && mouseY >= screenY1 && mouseY <= screenY2) {
                 this.isTextSelectingWithMouse = true;
                 return true;
             }
         }
-
-        onCommit.run();
+        // 3. Клик за пределами поля и панели — просто поглощаем клик. Ничего НЕ запекаем и НЕ закрываем.
         return true;
     }
 
@@ -345,6 +355,9 @@ public class TextEditorManager {
         }
     }
 
+    // =========================================================================
+    // ОБРАБОТКА НАЖАТИЯ КЛАВИШ
+    // =========================================================================
     public boolean keyPressed(int keyCode, boolean hasShift, boolean hasCtrl, Runnable onCommit) {
         if (!this.isTextModeActive || this.activeTextBox == null) return false;
 
@@ -380,9 +393,10 @@ public class TextEditorManager {
             return true;
         }
 
-        // Возвращаем false для обычных клавиш, чтобы Minecraft вывел символ через charTyped()
-        return true;
+        // Возвращаем false для букв и цифр, чтобы Minecraft переходил к их набору в charTyped()
+        return false;
     }
+
 
     public boolean charTyped(char codePoint) {
         if (this.isTextModeActive && this.activeTextBox != null) {

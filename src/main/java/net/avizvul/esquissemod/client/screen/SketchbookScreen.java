@@ -1714,11 +1714,14 @@ public class SketchbookScreen extends Screen {
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
         // 1. Обработка ввода в текстовую рамку
         if (textEditor.isTextModeActive()) {
-            return textEditor.keyPressed(keyCode, Screen.hasShiftDown(), Screen.hasControlDown(), this::commitTextToCanvas);
+            boolean handled = textEditor.keyPressed(keyCode, Screen.hasShiftDown(), Screen.hasControlDown(), this::commitTextToCanvas);
+            if (handled) return true;
+            // Если это обычная символьная клавиша — возвращаем false (для спуска в charTyped),
+            // но НЕ даём выполнить хоткеи B, E, S, T, R ниже!
+            return false;
         }
 
-
-        // 2. Хоткеи рисования и утилит (когда текстовый режим ВЫКЛЮЧЕН)
+        // 2. Хоткеи рисования и утилит (работают ТОЛЬКО когда текстовый режим ВЫКЛЮЧЕН)
         boolean hasPencil = hasTool(ModItems.PENCIL.get());
         boolean hasEraser = hasTool(ModItems.ERASER.get());
         boolean hasSmudge = hasTool(ModItems.SMUDGE.get());
@@ -1736,6 +1739,7 @@ public class SketchbookScreen extends Screen {
         if (keyCode == GLFW.GLFW_KEY_S && hasSmudge) { this.activeTool = Tool.SMUDGE; return true; }
         if (keyCode == GLFW.GLFW_KEY_W && hasKneadedEraser) { this.activeTool = Tool.KNEADED_ERASER; return true; }
         if (keyCode == GLFW.GLFW_KEY_V && hasColorMarker) { this.activeTool = Tool.COLOR_MARKER; return true; }
+
         if (keyCode == GLFW.GLFW_KEY_T && (hasPencil || hasColorPencil)) {
             if (this.activeTool == Tool.TEXT) {
                 this.activeTool = this.previousDrawingTool;
@@ -1759,7 +1763,6 @@ public class SketchbookScreen extends Screen {
             }
             return true;
         }
-
         if (keyCode == GLFW.GLFW_KEY_D && hasCompass) {
             if (Screen.hasShiftDown()) {
                 if (!this.isQuickCompassMode) {
@@ -1778,7 +1781,6 @@ public class SketchbookScreen extends Screen {
             }
             return true;
         }
-
         if (keyCode == GLFW.GLFW_KEY_Z && hasMagGlass) {
             this.isMagnifyingMode = true;
             if (Screen.hasShiftDown()) {
@@ -2266,6 +2268,13 @@ public class SketchbookScreen extends Screen {
         }
     }
 
+    @Override
+    public boolean charTyped(char codePoint, int modifiers) {
+        if (textEditor.isTextModeActive()) {
+            return textEditor.charTyped(codePoint);
+        }
+        return super.charTyped(codePoint, modifiers);
+    }
 
     private int getActiveTextColorArgb() {
         int alpha = 255;

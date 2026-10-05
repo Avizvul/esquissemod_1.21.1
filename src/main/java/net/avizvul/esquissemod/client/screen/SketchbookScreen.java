@@ -1266,11 +1266,12 @@ public class SketchbookScreen extends Screen {
             if (button == 1) {
                 if (textEditor.isTextModeActive()) {
                     boolean handled = textEditor.mouseClicked(
-                            lMouseX, lMouseY, button, pCell, canvasScreenLeft, renderY, this.width, this.height, isColorTool,
+                            mouseX, mouseY, lMouseX, lMouseY, button, pCell, canvasScreenLeft, renderY, this.width, this.height, isColorTool,
                             this::commitTextToCanvas, () -> textEditor.setTextModeActive(false)
                     );
                     if (handled) return true;
                 }
+
 
 
                 SketchData currentData = SketchData.fromArrayAndTexts(this.pixels, this.textElements);
@@ -1639,20 +1640,13 @@ public class SketchbookScreen extends Screen {
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
         textEditor.mouseReleased(button);
 
-        // 1. Работа с текстом
-        if (button == 0) {
-            this.isTextSelectingWithMouse = false;
-            this.isTextBoxDragging = false;
-            this.isTextBoxResizing = false;
-        }
-
-        // 2. Всё остальное
         if (button == 0) {
             if (this.strokePixels != null) {
                 this.strokePixels = new boolean[this.canvasWidth * this.resolutionMultiplier][this.canvasHeight * this.resolutionMultiplier];
             }
             this.lastLogicalX = -1;
             this.lastLogicalY = -1;
+
             if (this.isRulerDragging) { this.isRulerDragging = false; return true; }
             if (this.isRulerRotating) { this.isRulerRotating = false; return true; }
             if (this.isRotating) { this.isRotating = false; return true; }
@@ -1660,8 +1654,10 @@ public class SketchbookScreen extends Screen {
             if (this.isDrawing) { this.isDrawing = false; return true; }
             if (this.isErasing) { this.isErasing = false; return true; }
         }
+
         return super.mouseReleased(mouseX, mouseY, button);
     }
+
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
@@ -2264,8 +2260,8 @@ public class SketchbookScreen extends Screen {
 
     private int getActiveTextColorArgb() {
         int alpha = 255;
-        if (this.activeTextBox != null) {
-            alpha = switch (this.activeTextBox.textOpacityLevel) {
+        if (textEditor.getActiveTextBox() != null) {
+            alpha = switch (textEditor.getActiveTextBox().textOpacityLevel) {
                 case 1 -> 84;  // 33%
                 case 2 -> 168; // 66%
                 default -> 255; // 100%
@@ -2287,6 +2283,7 @@ public class SketchbookScreen extends Screen {
 
         return (alpha << 24) | (rgb & 0xFFFFFF);
     }
+
     @Override
     public boolean charTyped(char codePoint, int modifiers) {
         if (textEditor.charTyped(codePoint)) {

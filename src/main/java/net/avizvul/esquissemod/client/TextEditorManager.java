@@ -380,6 +380,7 @@ public class TextEditorManager {
             return true;
         }
 
+        // Возвращаем false для обычных клавиш, чтобы Minecraft вывел символ через charTyped()
         return true;
     }
 

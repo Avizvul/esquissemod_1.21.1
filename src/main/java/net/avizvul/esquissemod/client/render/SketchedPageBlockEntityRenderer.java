@@ -6,12 +6,17 @@ import net.avizvul.esquissemod.EsquisseMod;
 import net.avizvul.esquissemod.block.SketchedPageBlock;
 import net.avizvul.esquissemod.block.entity.SketchedPageBlockEntity;
 import net.avizvul.esquissemod.component.SketchData;
+import net.avizvul.esquissemod.component.TextElement;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
 import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider;
 import net.minecraft.core.Direction;
 import net.minecraft.resources.ResourceLocation;
+
+import java.util.List;
 
 public class SketchedPageBlockEntityRenderer implements BlockEntityRenderer<SketchedPageBlockEntity> {
 
@@ -54,7 +59,6 @@ public class SketchedPageBlockEntityRenderer implements BlockEntityRenderer<Sket
                 break;
         }
 
-        // Выдвигаем страницу ровно на внешнюю поверхность блока
         poseStack.translate(0.0f, 0.0f, 0.495f);
         poseStack.mulPose(com.mojang.math.Axis.ZP.rotationDegrees(blockEntity.getRotation() * 90f));
 
@@ -68,11 +72,34 @@ public class SketchedPageBlockEntityRenderer implements BlockEntityRenderer<Sket
         VertexConsumer bgConsumer = bufferSource.getBuffer(RenderType.entityCutout(PAGE_TEX));
         drawQuad(pose, bgConsumer, 0, 0, 0.0f, 126, 192, 0.0f, 0.0f, 1.0f, 1.0f, 0xFFFFFFFF, packedLight);
 
-        // 2. Рисунок и запечённый текст из FBO кэша (z = +0.01f — на лицевой стороне бумаги)
+        // 2. Рисунок из чистой текстуры (z = +0.01f — на лицевой стороне бумаги)
         ResourceLocation sketchTexture = net.avizvul.esquissemod.client.SketchTextureCache.getOrCreateTexture(data);
         if (sketchTexture != null) {
             VertexConsumer pixelConsumer = bufferSource.getBuffer(RenderType.entityTranslucentCull(sketchTexture));
             drawQuad(pose, pixelConsumer, 0, 0, 0.01f, 126, 192, 0.0f, 0.0f, 1.0f, 1.0f, 0xFFFFFFFF, packedLight);
+        }
+
+        // 3. Векторный текст (z = +0.02f — поверх пикселей)
+        List<TextElement> textElements = data.getTextElements();
+        if (textElements != null && !textElements.isEmpty()) {
+            Font font = Minecraft.getInstance().font;
+            for (TextElement elem : textElements) {
+                String[] lines = elem.text().split("\n", -1);
+                for (int l = 0; l < lines.length; l++) {
+                    if (lines[l].isEmpty()) continue;
+                    poseStack.pushPose();
+                    poseStack.translate(elem.x(), elem.y() + (l * 9), 0.02f);
+                    if (elem.rotation() != 0.0f) {
+                        poseStack.mulPose(com.mojang.math.Axis.ZP.rotationDegrees(elem.rotation()));
+                    }
+                    poseStack.scale(elem.scale(), elem.scale(), 1.0f);
+                    font.drawInBatch(
+                            lines[l], 0, 0, elem.color(), false,
+                            poseStack.last().pose(), bufferSource, Font.DisplayMode.NORMAL, 0, packedLight
+                    );
+                    poseStack.popPose();
+                }
+            }
         }
 
         poseStack.popPose();
@@ -85,10 +112,10 @@ public class SketchedPageBlockEntityRenderer implements BlockEntityRenderer<Sket
         int a = (argb >> 24) & 0xFF;
         int overlay = net.minecraft.client.renderer.texture.OverlayTexture.NO_OVERLAY;
 
-        // Порядок вершин CCW и нормаль (0, 0, 1.0f) строго наружу от блока
         consumer.addVertex(pose, x, y + height, z).setColor(r, g, b, a).setUv(u0, v0).setOverlay(overlay).setLight(light).setNormal(pose, 0.0f, 0.0f, 1.0f);
         consumer.addVertex(pose, x + width, y + height, z).setColor(r, g, b, a).setUv(u1, v0).setOverlay(overlay).setLight(light).setNormal(pose, 0.0f, 0.0f, 1.0f);
         consumer.addVertex(pose, x + width, y, z).setColor(r, g, b, a).setUv(u1, v1).setOverlay(overlay).setLight(light).setNormal(pose, 0.0f, 0.0f, 1.0f);
         consumer.addVertex(pose, x, y, z).setColor(r, g, b, a).setUv(u0, v1).setOverlay(overlay).setLight(light).setNormal(pose, 0.0f, 0.0f, 1.0f);
     }
 }
+

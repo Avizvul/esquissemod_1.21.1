@@ -34,29 +34,23 @@ public class SketchedPageBlockEntityRenderer implements BlockEntityRenderer<Sket
         poseStack.pushPose();
         poseStack.translate(0.5f, 0.5f, 0.5f);
 
-        // ИСПРАВЛЕННЫЕ ПОВОРОТЫ И ВЕКТОРЫ НОРМАЛЕЙ ДЛЯ ВСЕХ СТОРОН СВЕТА
+        // Повороты блока по сторонам света
         switch (facing) {
-            case NORTH:
-                poseStack.mulPose(com.mojang.math.Axis.ZP.rotationDegrees(180f));
-                break;
-            case SOUTH:
-                poseStack.mulPose(com.mojang.math.Axis.XP.rotationDegrees(180f));
-                break;
-            case EAST:
+            case NORTH -> poseStack.mulPose(com.mojang.math.Axis.ZP.rotationDegrees(180f));
+            case SOUTH -> poseStack.mulPose(com.mojang.math.Axis.XP.rotationDegrees(180f));
+            case EAST  -> {
                 poseStack.mulPose(com.mojang.math.Axis.YP.rotationDegrees(90f));
                 poseStack.mulPose(com.mojang.math.Axis.XP.rotationDegrees(180f));
-                break;
-            case WEST:
+            }
+            case WEST  -> {
                 poseStack.mulPose(com.mojang.math.Axis.YP.rotationDegrees(-90f));
                 poseStack.mulPose(com.mojang.math.Axis.XP.rotationDegrees(180f));
-                break;
-            case UP: // Пол
-                poseStack.mulPose(com.mojang.math.Axis.XP.rotationDegrees(90f));
-                break;
-            case DOWN: // Потолок
+            }
+            case UP    -> poseStack.mulPose(com.mojang.math.Axis.XP.rotationDegrees(90f));
+            case DOWN  -> {
                 poseStack.mulPose(com.mojang.math.Axis.XP.rotationDegrees(-90f));
                 poseStack.mulPose(com.mojang.math.Axis.ZP.rotationDegrees(180f));
-                break;
+            }
         }
 
         poseStack.translate(0.0f, 0.0f, 0.495f);
@@ -72,14 +66,14 @@ public class SketchedPageBlockEntityRenderer implements BlockEntityRenderer<Sket
         VertexConsumer bgConsumer = bufferSource.getBuffer(RenderType.entityCutout(PAGE_TEX));
         drawQuad(pose, bgConsumer, 0, 0, 0.0f, 126, 192, 0.0f, 0.0f, 1.0f, 1.0f, 0xFFFFFFFF, packedLight);
 
-        // 2. Рисунок из чистой текстуры (z = +0.01f — на лицевой стороне бумаги)
+        // 2. Растровый рисунок пикселей (z = +0.01f — выдвигаем спереди бумаги)
         ResourceLocation sketchTexture = net.avizvul.esquissemod.client.SketchTextureCache.getOrCreateTexture(data);
         if (sketchTexture != null) {
             VertexConsumer pixelConsumer = bufferSource.getBuffer(RenderType.entityTranslucentCull(sketchTexture));
             drawQuad(pose, pixelConsumer, 0, 0, -0.01f, 126, 192, 0.0f, 0.0f, 1.0f, 1.0f, 0xFFFFFFFF, packedLight);
         }
 
-        // 3. Векторный текст (z = +0.02f — поверх пикселей)
+        // 3. Векторный текст (z = +0.02f — выдвигаем поверх рисунка)
         List<TextElement> textElements = data.getTextElements();
         if (textElements != null && !textElements.isEmpty()) {
             Font font = Minecraft.getInstance().font;
@@ -88,14 +82,14 @@ public class SketchedPageBlockEntityRenderer implements BlockEntityRenderer<Sket
                 for (int l = 0; l < lines.length; l++) {
                     if (lines[l].isEmpty()) continue;
                     poseStack.pushPose();
-                    poseStack.translate(elem.x(), elem.y() + (l * 9), -0.8f);
+                    poseStack.translate(elem.x(), elem.y() + (l * 9), -0.02f);
                     if (elem.rotation() != 0.0f) {
                         poseStack.mulPose(com.mojang.math.Axis.ZP.rotationDegrees(elem.rotation()));
                     }
-                    poseStack.scale(elem.scale(), elem.scale(), 0.2f);
+                    poseStack.scale(elem.scale(), elem.scale(), 1.0f);
                     font.drawInBatch(
                             lines[l], 0, 0, elem.color(), false,
-                            poseStack.last().pose(), bufferSource, Font.DisplayMode.NORMAL, 0, packedLight
+                            poseStack.last().pose(), bufferSource, Font.DisplayMode.POLYGON_OFFSET, 0, packedLight
                     );
                     poseStack.popPose();
                 }
@@ -118,4 +112,3 @@ public class SketchedPageBlockEntityRenderer implements BlockEntityRenderer<Sket
         consumer.addVertex(pose, x, y, z).setColor(r, g, b, a).setUv(u0, v1).setOverlay(overlay).setLight(light).setNormal(pose, 0.0f, 0.0f, 1.0f);
     }
 }
-

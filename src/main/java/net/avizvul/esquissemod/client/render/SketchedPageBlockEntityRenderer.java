@@ -76,7 +76,7 @@ public class SketchedPageBlockEntityRenderer implements BlockEntityRenderer<Sket
         ResourceLocation sketchTexture = net.avizvul.esquissemod.client.SketchTextureCache.getOrCreateTexture(data);
         if (sketchTexture != null) {
             VertexConsumer pixelConsumer = bufferSource.getBuffer(RenderType.entityTranslucentCull(sketchTexture));
-            drawQuad(pose, pixelConsumer, 0, 0, 0.01f, 126, 192, 0.0f, 0.0f, 1.0f, 1.0f, 0xFFFFFFFF, packedLight);
+            drawQuad(pose, pixelConsumer, 0, 0, -0.01f, 126, 192, 0.0f, 0.0f, 1.0f, 1.0f, 0xFFFFFFFF, packedLight);
         }
 
         // 3. Векторный текст (z = +0.02f — поверх пикселей)
@@ -88,11 +88,11 @@ public class SketchedPageBlockEntityRenderer implements BlockEntityRenderer<Sket
                 for (int l = 0; l < lines.length; l++) {
                     if (lines[l].isEmpty()) continue;
                     poseStack.pushPose();
-                    poseStack.translate(elem.x(), elem.y() + (l * 9), 0.02f);
+                    poseStack.translate(elem.x(), elem.y() + (l * 9), -0.8f);
                     if (elem.rotation() != 0.0f) {
                         poseStack.mulPose(com.mojang.math.Axis.ZP.rotationDegrees(elem.rotation()));
                     }
-                    poseStack.scale(elem.scale(), elem.scale(), 1.0f);
+                    poseStack.scale(elem.scale(), elem.scale(), 0.2f);
                     font.drawInBatch(
                             lines[l], 0, 0, elem.color(), false,
                             poseStack.last().pose(), bufferSource, Font.DisplayMode.NORMAL, 0, packedLight

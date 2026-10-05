@@ -44,7 +44,7 @@ public class TextEditorManager {
     }
 
     // =========================================================================
-    // 1. ОТРИСОВКА ТЕКСТА, ВЫДЕЛЕНИЯ И КАРЕТКИ (Фиксировано относительно экрана)
+    // 1. ОТРИСОВКА ТЕКСТА, ВЫДЕЛЕНИЯ И КАРЕТКИ (Фиксировано горизонтально экрану)
     // =========================================================================
     public void renderActiveBoxTextContent(GuiGraphics guiGraphics, Font font, double pCell, int canvasScreenLeft, int renderY, int textColor) {
         if (!this.isTextModeActive || this.activeTextBox == null) return;
@@ -105,7 +105,7 @@ public class TextEditorManager {
             }
             guiGraphics.pose().scale(renderScale, renderScale, 1.0f);
 
-            // 1.1. Выделение текста (в локальных координатах строки)
+            // 1.1. ВЫДЕЛЕНИЕ ТЕКСТА (ИСПРАВЛЕНО: x2 считается от начала строки до selEnd)
             if (box.hasSelection()) {
                 int min = box.getSelectionMin();
                 int max = box.getSelectionMax();
@@ -113,17 +113,17 @@ public class TextEditorManager {
                     int selStart = Math.max(min, line.startCharIndex);
                     int selEnd = Math.min(max, line.endCharIndex);
                     String textBefore = box.getFormattedSubstring(line.startCharIndex, selStart);
-                    String textSelected = box.getFormattedSubstring(line.startCharIndex, selEnd);
+                    String textBeforeAndSelected = box.getFormattedSubstring(line.startCharIndex, selEnd);
                     int x1 = font.width(textBefore);
-                    int x2 = x1 + font.width(textSelected);
+                    int x2 = font.width(textBeforeAndSelected); // ИСПРАВЛЕННЫЙ РАСЧЁТ КОНЦА ВЫДЕЛЕНИЯ
                     guiGraphics.fill(x1, 0, x2, 9, 0x802266FF);
                 }
             }
 
-            // 1.2. Отрисовка самого текста
+            // 1.2. Отрисовка текста
             guiGraphics.drawString(font, line.formattedText, 0, 0, textColor, false);
 
-            // 1.3. Синяя каретка (в локальных координатах строки)
+            // 1.3. Синяя каретка
             if (showCaret && l == caretLineIdx) {
                 String textBeforeCaret = box.getFormattedSubstring(caretLine.startCharIndex, box.caret);
                 int caretX = font.width(textBeforeCaret);
@@ -135,7 +135,7 @@ public class TextEditorManager {
     }
 
     // =========================================================================
-    // 2. ОТРИСОВКА РАМКИ И РУЧЕК (Фиксировано относительно экрана)
+    // 2. ОТРИСОВКА РАМКИ И РУЧЕК (Фиксировано горизонтально экрану)
     // =========================================================================
     public void renderActiveBoxHandles(GuiGraphics guiGraphics, Font font, double pCell, int canvasScreenLeft, int renderY) {
         if (!this.isTextModeActive || this.activeTextBox == null) return;
@@ -170,7 +170,7 @@ public class TextEditorManager {
     }
 
     // =========================================================================
-    // 3. ПАНЕЛЬ ФОРМАТИРОВАНИЯ (Фиксировано относительно экрана)
+    // 3. ПАНЕЛЬ ФОРМАТИРОВАНИЯ (Фиксировано горизонтально экрану)
     // =========================================================================
     public void renderFormattingToolbar(GuiGraphics guiGraphics, Font font, double pCell, int canvasScreenLeft, int renderY, int screenWidth, int screenHeight, boolean isColorTool) {
         if (!this.isTextModeActive || this.activeTextBox == null) return;
@@ -391,6 +391,9 @@ public class TextEditorManager {
         return false;
     }
 
+    // =========================================================================
+    // 5. ЗАПЕКАНИЕ ТЕКСТА НА ХОЛСТ
+    // =========================================================================
     public TextElement commitTextToCanvas(Font font, double pCell, int canvasScreenLeft, int renderY, int drawWidth, int drawHeight, float rotationAngle, int activeTextColorArgb) {
         if (!this.isTextModeActive || this.activeTextBox == null) return null;
 
@@ -428,21 +431,8 @@ public class TextEditorManager {
             int cornerScreenX = (rotStep == 1 || rotStep == 2) ? screenX2 - 2 : screenX1 + 2;
             int cornerScreenY = (rotStep == 2 || rotStep == 3) ? screenY2 - 2 : screenY1 + 2;
 
-            double cx = canvasScreenLeft + drawWidth / 2.0;
-            double cy = renderY + drawHeight / 2.0;
-
-            double rad = Math.toRadians(-rotationAngle);
-            double cos = Math.cos(rad);
-            double sin = Math.sin(rad);
-
-            double dx = cornerScreenX - cx;
-            double dy = cornerScreenY - cy;
-
-            double unrotatedX = cx + (dx * cos - dy * sin);
-            double unrotatedY = cy + (dx * sin + dy * cos);
-
-            int localX = (int) Math.round((unrotatedX - canvasScreenLeft) / pCell);
-            int localY = (int) Math.round((unrotatedY - renderY) / pCell);
+            int localX = (int) Math.round((cornerScreenX - canvasScreenLeft) / pCell);
+            int localY = (int) Math.round((cornerScreenY - renderY) / pCell);
 
             float textScreenAngle = rotStep * 90.0f;
 

@@ -572,8 +572,6 @@ public class SketchbookScreen extends Screen {
             net.avizvul.esquissemod.client.StencilBufferUtils.endMask(guiGraphics);
             com.mojang.blaze3d.systems.RenderSystem.disableBlend();
 
-            textEditor.renderActiveBoxHandles(guiGraphics, this.font, pCell, canvasScreenLeft, renderY);
-
             guiGraphics.pose().pushPose();
             float resScale = 1.0f / this.resolutionMultiplier;
             guiGraphics.pose().scale(resScale, resScale, 1.0f);
@@ -670,6 +668,7 @@ public class SketchbookScreen extends Screen {
             guiGraphics.pose().popPose();
         }
 
+        guiGraphics.pose().popPose();
         // =========================================================================
         // КОНЕЦ МАТРИЦЫ ПОВОРОТА ХОЛСТА
         // =========================================================================

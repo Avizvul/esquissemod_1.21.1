@@ -442,7 +442,7 @@ public class SketchbookScreen extends Screen {
                 int elemY = renderY + (int) (elem.y() * pCell);
                 float renderScale = (float) (elem.scale() * pCell);
 
-                String[][] lines = new String[][]{elem.text().split("\n", -1)};
+                String[] lines = elem.text().split("\n", -1);
                 for (int l = 0; l < lines.length; l++) {
                     if (lines[l].isEmpty()) continue;
                     guiGraphics.pose().pushPose();
@@ -457,6 +457,7 @@ public class SketchbookScreen extends Screen {
             }
         }
     }
+
 
 
     //_________________________________________________________________________________
@@ -574,7 +575,7 @@ public class SketchbookScreen extends Screen {
             });
 
             // Запечённый текст
-            renderSavedTextElements(guiGraphics);
+            renderSavedTextElements(guiGraphics, canvasScreenLeft, renderY);
 
             // Активное текстовое поле
             textEditor.renderActiveBoxInCanvas(guiGraphics, this.font, pCell, canvasScreenLeft, renderY, getActiveTextColorArgb());

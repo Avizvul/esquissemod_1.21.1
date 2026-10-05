@@ -353,17 +353,20 @@ public class SketchbookScreen extends Screen {
 
     private double[] getScreenFromLogical(double lX, double lY) {
         if (this.rotationAngle == 0.0f) return new double[]{lX, lY};
-        double cx = this.exactGuiLeft + (this.fileWidth * this.scale) / 2.0;
-        double cy = this.exactGuiTop + (this.fileHeight * this.scale) / 2.0;
+        double renderX = this.exactGuiLeft;
+        double renderY = this.exactGuiTop;
+        double drawWidth = this.fileWidth * this.scale;
+        double drawHeight = this.fileHeight * this.scale;
+        double cx = renderX + drawWidth / 2.0;
+        double cy = renderY + drawHeight / 2.0;
         double dx = lX - cx;
         double dy = lY - cy;
         double rad = Math.toRadians(this.rotationAngle);
         double cos = Math.cos(rad);
         double sin = Math.sin(rad);
-        double screenX = cx + (dx * cos - dy * sin);
-        double screenY = cy + (dx * sin + dy * cos);
-        return new double[]{screenX, screenY};
+        return new double[]{cx + (dx * cos - dy * sin), cy + (dx * sin + dy * cos)};
     }
+
 
 
     private net.minecraft.world.item.ItemStack findItemStack(net.minecraft.world.item.Item targetItem) {
@@ -810,31 +813,32 @@ public class SketchbookScreen extends Screen {
 
         // === ОТРИСОВКА ВИЗУАЛА ЦИРКУЛЯ ===
         if (this.compassState != CompassState.INACTIVE) {
-            double screenAnchorX = lMouseX, screenAnchorY = lMouseY;
-            double screenPencilX = lMouseX, screenPencilY = lMouseY;
+            double screenAnchorX = mouseX, screenAnchorY = mouseY;
+            double screenPencilX = mouseX, screenPencilY = mouseY;
 
             if (this.compassState != CompassState.FOLDED) {
-                screenAnchorX = this.compassAnchorX;
-                screenAnchorY = this.compassAnchorY;
+                // Переводим логический якорь бумаги в актуальную точку экрана
+                double[] anchorScreen = getScreenFromLogical(this.compassAnchorX, this.compassAnchorY);
+                screenAnchorX = anchorScreen[0];
+                screenAnchorY = anchorScreen[1];
 
                 if (this.compassState == CompassState.ANCHORED) {
-                    double dx = lMouseX - this.compassAnchorX;
-                    double dy = lMouseY - this.compassAnchorY;
+                    double dx = mouseX - screenAnchorX;
+                    double dy = mouseY - screenAnchorY;
                     double dist = Math.sqrt(dx * dx + dy * dy);
                     if (dist > 192.0) {
                         dx = (dx / dist) * 192.0;
                         dy = (dy / dist) * 192.0;
                     }
-                    screenPencilX = this.compassAnchorX + dx;
-                    screenPencilY = this.compassAnchorY + dy;
+                    screenPencilX = screenAnchorX + dx;
+                    screenPencilY = screenAnchorY + dy;
                 } else if (this.compassState == CompassState.LOCKED) {
-                    double angle = Math.atan2(lMouseY - this.compassAnchorY, lMouseX - this.compassAnchorX);
-                    screenPencilX = this.compassAnchorX + this.compassRadius * Math.cos(angle);
-                    screenPencilY = this.compassAnchorY + this.compassRadius * Math.sin(angle);
+                    double angle = Math.atan2(mouseY - screenAnchorY, mouseX - screenAnchorX);
+                    screenPencilX = screenAnchorX + this.compassRadius * Math.cos(angle);
+                    screenPencilY = screenAnchorY + this.compassRadius * Math.sin(angle);
                 }
             }
 
-            // Вызов геометрического рендера 3 частей циркуля
             net.avizvul.esquissemod.client.render.CompassGeometryCalculator.renderCompass(
                     guiGraphics, screenAnchorX, screenAnchorY, screenPencilX, screenPencilY
             );
@@ -2323,7 +2327,7 @@ public class SketchbookScreen extends Screen {
         int canvasScreenLeft = renderX + ((this.frameWidth + this.deadZoneWidth) * this.scale);
 
         TextElement createdElement = textEditor.commitTextToCanvas(
-                this.font, pCell, canvasScreenLeft, renderY, drawWidth, drawHeight, this.rotationAngle, getActiveTextColorArgb()
+                this.font, pCell, canvasScreenLeft, renderX, renderY, drawWidth, drawHeight, this.rotationAngle, getActiveTextColorArgb()
         );
 
         if (createdElement != null) {
@@ -2331,7 +2335,6 @@ public class SketchbookScreen extends Screen {
             this.isCanvasDirty = true;
         }
     }
-
 
 //_________________________________________________________________________________
 

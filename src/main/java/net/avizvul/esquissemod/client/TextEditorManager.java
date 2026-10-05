@@ -409,10 +409,7 @@ public class TextEditorManager {
     // =========================================================================
     // 5. ЗАПЕКАНИЕ ТЕКСТА НА ХОЛСТ
     // =========================================================================
-    public TextElement commitTextToCanvas(
-            Font font, double pCell, int canvasScreenLeft,
-            int renderY, int drawWidth, int drawHeight,
-            float rotationAngle, int activeTextColorArgb) {
+    public TextElement commitTextToCanvas(Font font, double pCell, int canvasScreenLeft, int renderX, int renderY, int drawWidth, int drawHeight, float rotationAngle, int activeTextColorArgb) {
         if (!this.isTextModeActive || this.activeTextBox == null) return null;
 
         TextBoxState box = this.activeTextBox;
@@ -446,15 +443,15 @@ public class TextEditorManager {
             };
             int finalArgb = (alpha << 24) | baseRgb;
 
-            // 1. Экранные координаты начального угла текста
+            // 1. Экранные координаты угла текста
             int cornerScreenX = (rotStep == 1 || rotStep == 2) ? screenX2 - 2 : screenX1 + 2;
             int cornerScreenY = (rotStep == 2 || rotStep == 3) ? screenY2 - 2 : screenY1 + 2;
 
-            // 2. Центр вращения скетчбука на экране
-            double cx = canvasScreenLeft + drawWidth / 2.0;
+            // 2. Настоящий центр вращения скетчбука на экране (от renderX, а не от canvasScreenLeft!)
+            double cx = renderX + drawWidth / 2.0;
             double cy = renderY + drawHeight / 2.0;
 
-            // 3. Разворачиваем экранные координаты активного текста вокруг (cx, cy) на угол -rotationAngle
+            // 3. Разворачиваем координаты активного текста вокруг (cx, cy) на угол -rotationAngle
             double rad = Math.toRadians(-rotationAngle);
             double cos = Math.cos(rad);
             double sin = Math.sin(rad);
@@ -468,7 +465,7 @@ public class TextEditorManager {
             int localX = (int) Math.round((unrotatedX - canvasScreenLeft) / pCell);
             int localY = (int) Math.round((unrotatedY - renderY) / pCell);
 
-            // 4. Относительный угол поворота текста для хранения в TextElement
+            // 4. Вычисляем относительный угол для хранения в TextElement
             float textScreenAngle = rotStep * 90.0f;
             float relativeRotation = (textScreenAngle - rotationAngle) % 360.0f;
             if (relativeRotation < 0.0f) relativeRotation += 360.0f;

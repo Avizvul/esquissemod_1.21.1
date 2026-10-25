@@ -5,6 +5,7 @@ import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.avizvul.esquissemod.EsquisseMod;
 import net.avizvul.esquissemod.block.SketchedPageBlock;
 import net.avizvul.esquissemod.block.entity.SketchedPageBlockEntity;
+import net.avizvul.esquissemod.client.SketchTextureCache;
 import net.avizvul.esquissemod.component.SketchData;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
@@ -54,7 +55,7 @@ public class SketchedPageBlockEntityRenderer implements BlockEntityRenderer<Sket
         drawQuad(pose, bgConsumer, 0, 0, 0.0f, 126, 192, 0.0f, 0.0f, 1.0f, 1.0f, 0xFFFFFFFF, packedLight);
 
         // 2. Единая текстура с рисунком и текстом (z = +0.01f)
-        ResourceLocation sketchTexture = net.avizvul.esquissemod.client.SketchTextureCache.getOrCreateTexture(data);
+        ResourceLocation sketchTexture = SketchTextureCache.getIfReady(data); // вместо getOrCreateTexture
         if (sketchTexture != null) {
             VertexConsumer pixelConsumer = bufferSource.getBuffer(RenderType.entityTranslucentCull(sketchTexture));
             drawQuad(pose, pixelConsumer, 0, 0, 0.01f, 126, 192, 0.0f, 0.0f, 1.0f, 1.0f, 0xFFFFFFFF, packedLight);

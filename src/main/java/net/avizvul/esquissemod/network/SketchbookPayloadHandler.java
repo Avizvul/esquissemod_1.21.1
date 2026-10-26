@@ -1,5 +1,6 @@
 package net.avizvul.esquissemod.network;
 
+import net.avizvul.esquissemod.EsquisseMod;
 import net.avizvul.esquissemod.component.ModDataComponents;
 import net.avizvul.esquissemod.component.SketchData;
 import net.avizvul.esquissemod.item.ModItems;
@@ -55,12 +56,9 @@ public class SketchbookPayloadHandler {
                 }
             }
 
-            if (player.level() instanceof ServerLevel serverLevel) {
-                int ppd = ToolWear.PIXELS_PER_DAMAGE;
-                damageTool(player, serverLevel, ModItems.PENCIL.get(), payload.pencilPixels() / ppd);
-                damageTool(player, serverLevel, ModItems.ERASER.get(), payload.eraserPixels() / ppd);
-                damageTool(player, serverLevel, ModItems.KNEADED_ERASER.get(), payload.kneadedPixels() / ppd);
-                damageTool(player, serverLevel, ModItems.SMUDGE.get(), payload.smudgePixels() / ppd);
+            if (player.level() instanceof ServerLevel) {
+                applyWear(player, payload.pencilPixels(), payload.eraserPixels(),
+                        payload.kneadedPixels(), payload.smudgePixels());
             }
         });
     }
@@ -74,10 +72,33 @@ public class SketchbookPayloadHandler {
         });
     }
 
-    private static void damageTool(Player player, ServerLevel level, Item toolItem, int damageAmount) {
-        if (damageAmount <= 0) return;
-        modifyTool(player, toolItem, stack ->
-                stack.hurtAndBreak(damageAmount, level, (ServerPlayer) player, p -> {}));
+    private static void applyWear(Player player, int pencil, int eraser, int kneaded, int smudge) {
+        damageTool(player, ModItems.PENCIL.get(), pencil / ToolWear.pixelsPerDamage(ModItems.PENCIL.get()));
+        damageTool(player, ModItems.ERASER.get(), eraser / ToolWear.pixelsPerDamage(ModItems.ERASER.get()));
+        damageTool(player, ModItems.KNEADED_ERASER.get(), kneaded / ToolWear.pixelsPerDamage(ModItems.KNEADED_ERASER.get()));
+        damageTool(player, ModItems.SMUDGE.get(), smudge / ToolWear.pixelsPerDamage(ModItems.SMUDGE.get()));
+    }
+
+    public void handleToolUsage(final ToolUsagePayload payload, final IPayloadContext context) {
+        context.enqueueWork(() -> applyWear(context.player(),
+                payload.pencilPixels(), payload.eraserPixels(), payload.kneadedPixels(), payload.smudgePixels()));
+    }
+
+    private static void damageTool(Player player, Item toolItem, int amount) {
+        if (amount <= 0) return;
+        if (!ToolWear.WEAR_IN_CREATIVE && player.getAbilities().instabuild) return;
+
+        boolean found = modifyTool(player, toolItem, stack -> {
+            int newDamage = stack.getDamageValue() + amount;
+            if (newDamage >= stack.getMaxDamage()) {
+                stack.shrink(1); // инструмент сломался
+                player.level().playSound(null, player.blockPosition(),
+                        SoundEvents.ITEM_BREAK, SoundSource.PLAYERS, 0.8f, 1.0f);
+            } else {
+                stack.setDamageValue(newDamage);
+            }
+        });
+        EsquisseMod.LOGGER.info("Wear {} x{} applied={}", toolItem, amount, found);
     }
 
     /** Ищет первый инструмент в инвентаре (включая левую руку) и внутри пенала и применяет к нему действие. */

@@ -106,6 +106,12 @@ public class EsquisseMod {
                 handler::handlePrinterAction
         );
 
+        registrar.playToServer(
+                net.avizvul.esquissemod.network.ToolUsagePayload.TYPE,
+                net.avizvul.esquissemod.network.ToolUsagePayload.STREAM_CODEC,
+                handler::handleToolUsage
+        );
+
         registrar.playToClient(
                 net.avizvul.esquissemod.network.ExportSketchPayload.TYPE,
                 net.avizvul.esquissemod.network.ExportSketchPayload.STREAM_CODEC, (payload, context) -> context.enqueueWork(() -> {

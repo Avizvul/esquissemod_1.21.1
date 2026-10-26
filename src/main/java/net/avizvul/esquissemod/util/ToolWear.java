@@ -11,11 +11,21 @@ public final class ToolWear {
 
     /** Сколько изменённых пикселей = 1 единица износа (как у карандаша и ластика). */
     public static final int PIXELS_PER_DAMAGE = 100;
+    public static final int KNEADED_PIXELS_PER_DAMAGE = 3000;
+    public static final int SMUDGE_PIXELS_PER_DAMAGE = 3000;
     /** Ёмкость одного цвета (равна прочности обычных инструментов). */
     public static final int MAX_PAINT = 256;
     public static final int COLOR_COUNT = 16;
     public static final int PAINT_STAGES = 4;
 
+    /** Изнашивать инструменты в творческом режиме (true удобно для отладки, для релиза поставьте false). */
+    public static final boolean WEAR_IN_CREATIVE = true;
+
+    public static int pixelsPerDamage(net.minecraft.world.item.Item item) {
+        if (item == net.avizvul.esquissemod.item.ModItems.KNEADED_ERASER.get()) return KNEADED_PIXELS_PER_DAMAGE;
+        if (item == net.avizvul.esquissemod.item.ModItems.SMUDGE.get()) return SMUDGE_PIXELS_PER_DAMAGE;
+        return PIXELS_PER_DAMAGE;
+    }
     /** ID активного цвета инструмента или -1, если красок нет. */
     public static int getActiveColorId(ItemStack stack) {
         List<Integer> colors = stack.getOrDefault(ModDataComponents.STORED_COLORS.get(), List.of());

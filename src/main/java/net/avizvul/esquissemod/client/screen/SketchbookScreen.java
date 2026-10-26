@@ -10,6 +10,7 @@ import net.avizvul.esquissemod.network.SketchbookSavePayload;
 import net.avizvul.esquissemod.network.TearPagePayload;
 import net.avizvul.esquissemod.network.PaintUsagePayload;
 import net.avizvul.esquissemod.util.ToolWear;
+import net.avizvul.esquissemod.network.ToolUsagePayload;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
@@ -71,6 +72,7 @@ public class SketchbookScreen extends Screen {
     private boolean isPageLoaded = false;
     private boolean isDrawing = false;
     private boolean isErasing = false;
+    private boolean isToolRestored = false;
 
     private double exactGuiLeft;
     private double exactGuiTop;
@@ -129,6 +131,9 @@ public class SketchbookScreen extends Screen {
     private int currentPageIndex = 0;
     private static int savedPageIndex = 0;
 
+    private static Tool savedActiveTool = Tool.PENCIL;
+    private static Tool savedPreviousDrawingTool = Tool.PENCIL;
+
     private net.minecraft.client.renderer.texture.DynamicTexture activeCanvasTexture;
     private net.minecraft.resources.ResourceLocation activeCanvasId;
     private boolean isCanvasDirty = true;
@@ -143,10 +148,6 @@ public class SketchbookScreen extends Screen {
     boolean hasShift = Screen.hasShiftDown();
     boolean hasCtrl = Screen.hasControlDown();
 
-
-    private net.minecraft.world.item.ItemStack getColorMarkerStack() {
-        return findItemStack(ModItems.COLOR_MARKER.get());
-    }
 
     private int getMarkerRotation() {
         net.minecraft.world.item.ItemStack stack = getActiveToolStack();
@@ -219,7 +220,10 @@ public class SketchbookScreen extends Screen {
                 this.rulerY = this.height / 2.0;
             }
             loadPaintLevels();
-            loadPagePixels();
+            if (!this.isToolRestored) {
+                restoreSavedTool();
+                this.isToolRestored = true;
+            }
             loadPagePixels();
         }
     }
@@ -436,6 +440,34 @@ public class SketchbookScreen extends Screen {
     private net.minecraft.world.item.ItemStack getColorPencilStack() {
         return findItemStack(net.avizvul.esquissemod.item.ModItems.COLOR_PENCIL.get());
     }
+    private net.minecraft.world.item.ItemStack getColorMarkerStack() {
+        return findItemStack(ModItems.COLOR_MARKER.get());
+    }
+
+    private boolean isToolAvailable(Tool tool) {
+        return switch (tool) {
+            case PENCIL -> hasTool(ModItems.PENCIL.get());
+            case COLOR_PENCIL -> !getColorPencilStack().isEmpty();
+            case COLOR_MARKER -> hasTool(ModItems.COLOR_MARKER.get());
+            case ERASER -> hasTool(ModItems.ERASER.get());
+            case KNEADED_ERASER -> hasTool(ModItems.KNEADED_ERASER.get());
+            case SMUDGE -> hasTool(ModItems.SMUDGE.get());
+            case TEXT -> hasTool(ModItems.PENCIL.get()) || !getColorPencilStack().isEmpty();
+        };
+    }
+
+    private void restoreSavedTool() {
+        Tool[] fallback = {Tool.PENCIL, Tool.COLOR_PENCIL, Tool.COLOR_MARKER, Tool.ERASER, Tool.KNEADED_ERASER, Tool.SMUDGE};
+        Tool wanted = isToolAvailable(savedActiveTool) ? savedActiveTool : null;
+        if (wanted == null) {
+            for (Tool t : fallback) {
+                if (isToolAvailable(t)) { wanted = t; break; }
+            }
+        }
+        this.activeTool = (wanted != null) ? wanted : Tool.PENCIL;
+        this.previousDrawingTool = (savedPreviousDrawingTool != Tool.TEXT && isToolAvailable(savedPreviousDrawingTool))
+                ? savedPreviousDrawingTool : Tool.PENCIL;
+    }
 
     private int paintSlot(Tool tool) {
         return tool == Tool.COLOR_MARKER ? 1 : 0;
@@ -478,12 +510,33 @@ public class SketchbookScreen extends Screen {
         net.neoforged.neoforge.network.PacketDistributor.sendToServer(new SketchbookSavePayload(
                 this.currentPageIndex, data,
                 this.pencilPixelsUsed, this.eraserPixelsUsed, this.kneadedPixelsUsed, this.smudgePixelsUsed));
+        reduceWearRemainders();
+        flushPaint();
+    }
 
+    /** Вызывается при отпускании кнопки мыши: износ уходит сразу, без отправки рисунка. */
+    private void sendToolUsage() {
+        boolean any = this.pencilPixelsUsed >= ToolWear.PIXELS_PER_DAMAGE
+                || this.eraserPixelsUsed >= ToolWear.PIXELS_PER_DAMAGE
+                || this.kneadedPixelsUsed >= ToolWear.KNEADED_PIXELS_PER_DAMAGE
+                || this.smudgePixelsUsed >= ToolWear.SMUDGE_PIXELS_PER_DAMAGE;
+        if (any) {
+            net.neoforged.neoforge.network.PacketDistributor.sendToServer(new ToolUsagePayload(
+                    this.pencilPixelsUsed, this.eraserPixelsUsed, this.kneadedPixelsUsed, this.smudgePixelsUsed));
+            reduceWearRemainders();
+        }
+        flushPaint();
+    }
+
+    /** Остаток меньше одной единицы износа переносится на следующую отправку. */
+    private void reduceWearRemainders() {
         this.pencilPixelsUsed %= ToolWear.PIXELS_PER_DAMAGE;
         this.eraserPixelsUsed %= ToolWear.PIXELS_PER_DAMAGE;
-        this.kneadedPixelsUsed %= ToolWear.PIXELS_PER_DAMAGE;
-        this.smudgePixelsUsed %= ToolWear.PIXELS_PER_DAMAGE;
+        this.kneadedPixelsUsed %= ToolWear.KNEADED_PIXELS_PER_DAMAGE;
+        this.smudgePixelsUsed %= ToolWear.SMUDGE_PIXELS_PER_DAMAGE;
+    }
 
+    private void flushPaint() {
         for (int slot = 0; slot < 2; slot++) {
             boolean any = false;
             List<Integer> units = new ArrayList<>(ToolWear.COLOR_COUNT);
@@ -1128,7 +1181,34 @@ public class SketchbookScreen extends Screen {
         return new double[]{mX, mY};
     }
 
+    /** Остаток прочности с учётом ещё не отправленных пикселей. */
+    private boolean isWornOut(net.minecraft.world.item.Item item, int pendingPixels) {
+        ItemStack s = findItemStack(item);
+        if (s.isEmpty() || !s.isDamageableItem()) return false;
+        if (!ToolWear.WEAR_IN_CREATIVE && this.minecraft != null && this.minecraft.player != null
+                && this.minecraft.player.getAbilities().instabuild) return false;
+        int left = s.getMaxDamage() - s.getDamageValue() - pendingPixels / ToolWear.pixelsPerDamage(item);
+        return left <= 0;
+    }
+
+    private boolean isActiveToolWornOut() {
+        return switch (this.activeTool) {
+            case PENCIL -> isWornOut(ModItems.PENCIL.get(), this.pencilPixelsUsed);
+            case ERASER -> isWornOut(ModItems.ERASER.get(), this.eraserPixelsUsed);
+            case KNEADED_ERASER -> isWornOut(ModItems.KNEADED_ERASER.get(), this.kneadedPixelsUsed);
+            case SMUDGE -> isWornOut(ModItems.SMUDGE.get(), this.smudgePixelsUsed);
+            default -> false;
+        };
+    }
+
     private void drawPixel(double lMouseX, double lMouseY) {
+
+        if (isActiveToolWornOut()) {
+            this.isDrawing = false;
+            this.isErasing = false;
+            return;
+        }
+
         int canvasScreenLeft = (int) this.exactGuiLeft + ((this.frameWidth + this.deadZoneWidth) * this.scale);
         int canvasScreenTop = (int) this.exactGuiTop;
         double physicalCellSize = (double) this.scale / this.resolutionMultiplier;
@@ -1203,7 +1283,7 @@ public class SketchbookScreen extends Screen {
                         if (pixels[x][y] != 0) {
                             pixels[x][y] = 0;
                             this.isCanvasDirty = true;
-                            this.kneadedPixelsUsed++;
+                            this.eraserPixelsUsed++;
                         }
                     } else {
                         if (this.strokePixels == null) this.strokePixels = new boolean[this.canvasWidth * this.resolutionMultiplier][this.canvasHeight * this.resolutionMultiplier];
@@ -1229,7 +1309,7 @@ public class SketchbookScreen extends Screen {
                                     if (a <= 5) pixels[x][y] = 0;
                                     else pixels[x][y] = (a << 24) | (currentColor & 0x00FFFFFF);
                                     this.isCanvasDirty = true;
-                                    this.eraserPixelsUsed++;
+                                    this.kneadedPixelsUsed++;
                                     this.strokePixels[x][y] = true;
                                 }
                             }
@@ -1391,10 +1471,6 @@ public class SketchbookScreen extends Screen {
                 SketchData currentData = SketchData.fromArrayAndTexts(this.pixels, this.textElements);
 
                 sendPageSave(currentData);
-                net.neoforged.neoforge.network.PacketDistributor.sendToServer(
-                        new TearPagePayload(this.currentPageIndex, currentData)
-                );
-
                 net.neoforged.neoforge.network.PacketDistributor.sendToServer(
                         new TearPagePayload(this.currentPageIndex, currentData)
                 );
@@ -1761,6 +1837,9 @@ public class SketchbookScreen extends Screen {
         textEditor.mouseReleased(button);
 
         if (button == 0) {
+            if (this.isDrawing || this.isErasing) {
+                sendToolUsage();
+            }
             if (this.strokePixels != null) {
                 this.strokePixels = new boolean[this.canvasWidth * this.resolutionMultiplier][this.canvasHeight * this.resolutionMultiplier];
             }
@@ -2435,6 +2514,8 @@ public class SketchbookScreen extends Screen {
 
     @Override
     public void onClose() {
+        savedActiveTool = (this.activeTool == Tool.TEXT) ? this.previousDrawingTool : this.activeTool;
+        savedPreviousDrawingTool = this.previousDrawingTool;
         savedGuiLeft = this.exactGuiLeft;
         savedGuiTop = this.exactGuiTop;
         savedRotationAngle = this.rotationAngle;

@@ -37,29 +37,36 @@ public class ColorUtils {
     }
 
     /**
-     * Линейная интерполяция (Lerp) между двумя ARGB цветами.
-     * @param dest Цвет назначения (куда сдвигаем)
+     * Линейная интерполяция между двумя ARGB цветами с учётом альфы (premultiplied).
+     * Прозрачные пиксели не подмешивают свой RGB, поэтому на границе рисунка нет серых оттенков.
+     * @param dest   Цвет назначения (куда сдвигаем)
      * @param source Взятый цвет (откуда сдвигаем)
-     * @param t Коэффициент смешивания (0.0 = только dest, 1.0 = только source)
-     * @return Смешанный ARGB цвет
+     * @param t      Коэффициент смешивания (0.0 = только dest, 1.0 = только source)
      */
     public static int lerpColor(int dest, int source, float t) {
-        int dA = (dest >> 24) & 0xFF;
-        int dR = (dest >> 16) & 0xFF;
-        int dG = (dest >> 8) & 0xFF;
-        int dB = dest & 0xFF;
+        float dA = ((dest >> 24) & 0xFF) / 255.0f;
+        float sA = ((source >> 24) & 0xFF) / 255.0f;
 
-        int sA = (source >> 24) & 0xFF;
-        int sR = (source >> 16) & 0xFF;
-        int sG = (source >> 8) & 0xFF;
-        int sB = source & 0xFF;
+        // Альфа интерполируется как обычно
+        float outA = dA + (sA - dA) * t;
+        if (outA <= 0.0f) return 0;
 
-        // Применяем формулу: Dest + (Source - Dest) * T для каждого канала
-        int nA = (int) (dA + (sA - dA) * t);
-        int nR = (int) (dR + (sR - dR) * t);
-        int nG = (int) (dG + (sG - dG) * t);
-        int nB = (int) (dB + (sB - dB) * t);
+        // Цвет взвешивается по альфе каждого из пикселей
+        float dWeight = dA * (1.0f - t);
+        float sWeight = sA * t;
+        float total = dWeight + sWeight;
+        if (total <= 0.0f) return 0;
 
-        return (nA << 24) | (nR << 16) | (nG << 8) | nB;
+        float outR = (((dest >> 16) & 0xFF) * dWeight + ((source >> 16) & 0xFF) * sWeight) / total;
+        float outG = (((dest >> 8) & 0xFF) * dWeight + ((source >> 8) & 0xFF) * sWeight) / total;
+        float outB = ((dest & 0xFF) * dWeight + (source & 0xFF) * sWeight) / total;
+
+        int a = Math.round(outA * 255.0f);
+        int r = Math.round(outR);
+        int g = Math.round(outG);
+        int b = Math.round(outB);
+        if (a <= 0) return 0;
+
+        return (a << 24) | (r << 16) | (g << 8) | b;
     }
 }

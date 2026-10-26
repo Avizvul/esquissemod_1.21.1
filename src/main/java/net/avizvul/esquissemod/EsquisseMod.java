@@ -111,6 +111,13 @@ public class EsquisseMod {
                 net.avizvul.esquissemod.network.ExportSketchPayload.STREAM_CODEC, (payload, context) -> context.enqueueWork(() -> {
             net.avizvul.esquissemod.util.SketchExporter.exportSketchToScreenshots(payload.sketchData());
         }));
+
+        registrar.playToServer(
+                net.avizvul.esquissemod.network.PaintUsagePayload.TYPE,
+                net.avizvul.esquissemod.network.PaintUsagePayload.STREAM_CODEC,
+                handler::handlePaintUsage
+        );
+
     }
 
     private void commonSetup(FMLCommonSetupEvent event) {

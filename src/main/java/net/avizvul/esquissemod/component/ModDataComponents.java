@@ -118,6 +118,15 @@ public class ModDataComponents {
                             .build()
             );
 
+    // Остаток краски по цветам: индекс списка = ID красителя (0..15), значение 0..256
+    public static final Supplier<DataComponentType<List<Integer>>> PAINT_LEVELS =
+            DATA_COMPONENT_TYPES.register("paint_levels", () ->
+                    DataComponentType.<List<Integer>>builder()
+                            .persistent(Codec.INT.listOf())
+                            .networkSynchronized(ByteBufCodecs.collection(java.util.ArrayList::new, ByteBufCodecs.INT))
+                            .build()
+            );
+
     public static void register(IEventBus eventBus) {
         DATA_COMPONENT_TYPES.register(eventBus);
     }

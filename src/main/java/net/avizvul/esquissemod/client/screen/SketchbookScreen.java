@@ -8,7 +8,8 @@ import net.avizvul.esquissemod.component.TextElement;
 import net.avizvul.esquissemod.item.ModItems;
 import net.avizvul.esquissemod.network.SketchbookSavePayload;
 import net.avizvul.esquissemod.network.TearPagePayload;
-import net.avizvul.esquissemod.util.ColorUtils;
+import net.avizvul.esquissemod.network.PaintUsagePayload;
+import net.avizvul.esquissemod.util.ToolWear;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
@@ -52,6 +53,14 @@ public class SketchbookScreen extends Screen {
 
     private int pencilPixelsUsed = 0;
     private int eraserPixelsUsed = 0;
+    private int kneadedPixelsUsed = 0;
+    private int smudgePixelsUsed = 0;
+
+    // Краска. Первый индекс: 0 = цветной карандаш, 1 = маркер. Второй: ID красителя (0..15)
+    private final int[][] paintLevel = new int[2][ToolWear.COLOR_COUNT];        // остаток в единицах (для GUI)
+    private final int[][] paintPixels = new int[2][ToolWear.COLOR_COUNT];       // накопитель пикселей до следующей единицы
+    private final int[][] paintPendingUnits = new int[2][ToolWear.COLOR_COUNT]; // потрачено, но ещё не отправлено серверу
+    private boolean isPaintLoaded = false;
 
     private final int scale = 3;
     private final int resolutionMultiplier = 2;
@@ -209,6 +218,8 @@ public class SketchbookScreen extends Screen {
                 this.rulerX = this.width / 2.0;
                 this.rulerY = this.height / 2.0;
             }
+            loadPaintLevels();
+            loadPagePixels();
             loadPagePixels();
         }
     }
@@ -295,9 +306,7 @@ public class SketchbookScreen extends Screen {
             pagesList.set(this.currentPageIndex, data);
             stack.set(ModDataComponents.SKETCHBOOK_PAGES.get(), pagesList);
 
-            net.neoforged.neoforge.network.PacketDistributor.sendToServer(
-                    new SketchbookSavePayload(this.currentPageIndex, data, this.pencilPixelsUsed, this.eraserPixelsUsed)
-            );
+            sendPageSave(data);
         }
 
         // 3. Переключаем индекс и обновляем поля
@@ -428,6 +437,68 @@ public class SketchbookScreen extends Screen {
         return findItemStack(net.avizvul.esquissemod.item.ModItems.COLOR_PENCIL.get());
     }
 
+    private int paintSlot(Tool tool) {
+        return tool == Tool.COLOR_MARKER ? 1 : 0;
+    }
+
+    /** Загружаем остатки краски один раз при открытии: дальше экран ведёт учёт сам. */
+    private void loadPaintLevels() {
+        if (this.isPaintLoaded) return;
+        loadPaintFrom(getColorPencilStack(), 0);
+        loadPaintFrom(getColorMarkerStack(), 1);
+        this.isPaintLoaded = true;
+    }
+
+    private void loadPaintFrom(ItemStack stack, int slot) {
+        for (int c = 0; c < ToolWear.COLOR_COUNT; c++) {
+            this.paintLevel[slot][c] = stack.isEmpty() ? 0 : ToolWear.getPaintLevel(stack, c);
+        }
+    }
+
+    /** Есть ли краска в активном цвете цветного инструмента. */
+    private boolean hasActivePaint(Tool tool) {
+        ItemStack stack = (tool == Tool.COLOR_MARKER) ? getColorMarkerStack() : getColorPencilStack();
+        int colorId = ToolWear.getActiveColorId(stack);
+        return colorId >= 0 && this.paintLevel[paintSlot(tool)][colorId] > 0;
+    }
+
+    /** Тот же принцип, что у карандаша: каждые 100 пикселей = 1 единица. */
+    private void spendPaint(int slot, int colorId) {
+        if (colorId < 0) return;
+        if (this.minecraft != null && this.minecraft.player != null && this.minecraft.player.getAbilities().instabuild) return;
+        if (++this.paintPixels[slot][colorId] >= ToolWear.PIXELS_PER_DAMAGE) {
+            this.paintPixels[slot][colorId] -= ToolWear.PIXELS_PER_DAMAGE;
+            this.paintLevel[slot][colorId] = Math.max(0, this.paintLevel[slot][colorId] - 1);
+            this.paintPendingUnits[slot][colorId]++;
+        }
+    }
+
+    /** Единая отправка сохранения и износа. Остаток меньше 100 пикселей переносится на следующую отправку. */
+    private void sendPageSave(SketchData data) {
+        net.neoforged.neoforge.network.PacketDistributor.sendToServer(new SketchbookSavePayload(
+                this.currentPageIndex, data,
+                this.pencilPixelsUsed, this.eraserPixelsUsed, this.kneadedPixelsUsed, this.smudgePixelsUsed));
+
+        this.pencilPixelsUsed %= ToolWear.PIXELS_PER_DAMAGE;
+        this.eraserPixelsUsed %= ToolWear.PIXELS_PER_DAMAGE;
+        this.kneadedPixelsUsed %= ToolWear.PIXELS_PER_DAMAGE;
+        this.smudgePixelsUsed %= ToolWear.PIXELS_PER_DAMAGE;
+
+        for (int slot = 0; slot < 2; slot++) {
+            boolean any = false;
+            List<Integer> units = new ArrayList<>(ToolWear.COLOR_COUNT);
+            for (int c = 0; c < ToolWear.COLOR_COUNT; c++) {
+                int u = this.paintPendingUnits[slot][c];
+                units.add(u);
+                this.paintPendingUnits[slot][c] = 0;
+                if (u > 0) any = true;
+            }
+            if (any) {
+                net.neoforged.neoforge.network.PacketDistributor.sendToServer(new PaintUsagePayload(slot == 1, units));
+            }
+        }
+    }
+
     @Override
     public boolean isPauseScreen() {
         return false;
@@ -496,14 +567,6 @@ public class SketchbookScreen extends Screen {
 
         int canvasScreenLeft = renderX + ((this.frameWidth + this.deadZoneWidth) * this.scale);
         int canvasScreenTop = renderY;
-
-        // Распознавание предметов в руках
-        ItemStack mainHand = this.minecraft.player.getMainHandItem();
-        ItemStack offHand = this.minecraft.player.getOffhandItem();
-
-        boolean holdingPencil = mainHand.is(ModItems.PENCIL.get()) || offHand.is(ModItems.PENCIL.get());
-        boolean holdingColorPencil = mainHand.is(ModItems.COLOR_PENCIL.get()) || offHand.is(ModItems.COLOR_PENCIL.get());
-        boolean holdingColorMarker = mainHand.is(ModItems.COLOR_MARKER.get()) || offHand.is(ModItems.COLOR_MARKER.get());
 
         boolean hasPencil = hasTool(ModItems.PENCIL.get());
         boolean hasEraser = hasTool(ModItems.ERASER.get());
@@ -605,8 +668,8 @@ public class SketchbookScreen extends Screen {
                     >= canvasScreenLeft && lMouseHover[0] < (canvasScreenLeft + scaledCanvasWidth) && lMouseHover[1]
                     >= renderY && lMouseHover[1] < (renderY + scaledImageHeight)) {
                 boolean canDraw = (this.activeTool == Tool.PENCIL && hasPencil) ||
-                        (this.activeTool == Tool.COLOR_PENCIL && hasPencilColors) ||
-                        (this.activeTool == Tool.COLOR_MARKER && hasMarkerColors) ||
+                        (this.activeTool == Tool.COLOR_PENCIL && hasPencilColors && hasActivePaint(Tool.COLOR_PENCIL)) ||
+                        (this.activeTool == Tool.COLOR_MARKER && hasMarkerColors && hasActivePaint(Tool.COLOR_MARKER)) ||
                         (this.activeTool == Tool.ERASER && hasEraser) ||
                         (this.activeTool == Tool.SMUDGE && hasSmudge) ||
                         (this.activeTool == Tool.KNEADED_ERASER && hasKneaded);
@@ -750,12 +813,14 @@ public class SketchbookScreen extends Screen {
             guiGraphics.drawString(this.font, hardnessText, hardnessTextX, peekY - 24, textColor, false);
         }
 
-        // 5. Включение круговой палитры ТОЛЬКО для цветного карандаша и маркера
-        boolean enablePalette = (holdingColorPencil && effectiveTool == Tool.COLOR_PENCIL) ||
-                (holdingColorMarker && effectiveTool == Tool.COLOR_MARKER);
+        // 5. Круговая палитра для цветного карандаша и маркера (инструмент ищется в инвентаре/пенале, а не в руке)
+        boolean enablePalette = (effectiveTool == Tool.COLOR_PENCIL && hasColorPencil) ||
+                (effectiveTool == Tool.COLOR_MARKER && hasColorMarker);
 
         if (enablePalette) {
-            renderPalette(guiGraphics, (effectiveTool == Tool.COLOR_MARKER) ? getColorMarkerStack() : colorPencilStack);
+            renderPalette(guiGraphics,
+                    (effectiveTool == Tool.COLOR_MARKER) ? getColorMarkerStack() : colorPencilStack,
+                    effectiveTool);
         }
 
         if ((hasPencil && isPencilActive) || (hasColorPencil && isColorPencilActive)) {
@@ -926,6 +991,10 @@ public class SketchbookScreen extends Screen {
         float g = ((rgb >> 8) & 0xFF) / 255.0f;
         float b = (rgb & 0xFF) / 255.0f;
 
+        int activeId = ToolWear.getActiveColorId(colorStack);
+        if (activeId >= 0 && this.paintLevel[paintSlot(tool)][activeId] <= 0) {
+            rgb = 0x777777; // краска закончилась
+        }
         guiGraphics.setColor(r, g, b, 1.0f);
         guiGraphics.blit(tintTex, x, renderY, scaledWidth, scaledHeight, 0.0f, vOffset, this.buttonWidth, this.buttonHeight, this.buttonWidth, this.buttonHeight * 2);
         guiGraphics.setColor(1.0f, 1.0f, 1.0f, 1.0f);
@@ -964,32 +1033,41 @@ public class SketchbookScreen extends Screen {
         return layout;
     }
 
-    private void renderPalette(GuiGraphics guiGraphics, net.minecraft.world.item.ItemStack activeColorStack) {
-        if ((this.activeTool != Tool.COLOR_PENCIL && this.activeTool != Tool.COLOR_MARKER) || activeColorStack.isEmpty()) return;
+    private void renderPalette(GuiGraphics guiGraphics, net.minecraft.world.item.ItemStack activeColorStack, Tool tool) {
+        if (activeColorStack.isEmpty()) return;
 
-        java.util.List<Integer> colors = activeColorStack.getOrDefault(ModDataComponents.STORED_COLORS.get(), new java.util.ArrayList<>());
-        int activeIndex = Math.abs(activeColorStack.getOrDefault(ModDataComponents.ACTIVE_COLOR_INDEX.get(), 0));
-        int activeColorId = colors.isEmpty() ? -1 : colors.get(activeIndex % colors.size());
-
+        List<Integer> colors = activeColorStack.getOrDefault(ModDataComponents.STORED_COLORS.get(), new ArrayList<>());
+        int activeColorId = ToolWear.getActiveColorId(activeColorStack);
+        int slot = paintSlot(tool);
         int swatchSize = 12;
 
         for (Swatch swatch : getPaletteLayout()) {
             boolean hasColor = colors.contains(swatch.colorId());
-            int outlineColor;
+            int level = hasColor ? this.paintLevel[slot][swatch.colorId()] : 0;
+            int stage = ToolWear.getPaintStage(level); // 0..4
 
+            int outlineColor;
             if (colors.isEmpty()) {
                 outlineColor = 0xFFFFFFFF;
+            } else if (hasColor && swatch.colorId() == activeColorId) {
+                outlineColor = 0xFFFFFFFF;
+            } else if (hasColor && stage == 0) {
+                outlineColor = 0xFF662222; // краска закончилась
             } else {
-                outlineColor = (hasColor && swatch.colorId() == activeColorId) ? 0xFFFFFFFF : 0xFF444444;
+                outlineColor = 0xFF444444;
             }
 
+            // Рамка и тёмная пустая ячейка
             guiGraphics.fill(swatch.x() - 1, swatch.y() - 1, swatch.x() + swatchSize + 1, swatch.y() + swatchSize + 1, outlineColor);
+            guiGraphics.fill(swatch.x(), swatch.y(), swatch.x() + swatchSize, swatch.y() + swatchSize, 0xFF111111);
 
-            if (hasColor) {
+            // Квадрат краски: 100% = 12px, 75% = 9px, 50% = 6px, 25% = 3px, 0% = исчез
+            if (stage > 0) {
+                int size = swatchSize * stage / ToolWear.PAINT_STAGES;
+                int offset = (swatchSize - size) / 2;
                 int rgb = net.minecraft.world.item.DyeColor.byId(swatch.colorId()).getTextureDiffuseColor() | 0xFF000000;
-                guiGraphics.fill(swatch.x(), swatch.y(), swatch.x() + swatchSize, swatch.y() + swatchSize, rgb);
-            } else {
-                guiGraphics.fill(swatch.x(), swatch.y(), swatch.x() + swatchSize, swatch.y() + swatchSize, 0xFF111111);
+                guiGraphics.fill(swatch.x() + offset, swatch.y() + offset,
+                        swatch.x() + offset + size, swatch.y() + offset + size, rgb);
             }
         }
     }
@@ -1101,6 +1179,10 @@ public class SketchbookScreen extends Screen {
         int startY = isMarker ? (centerY - bound) : (centerY - offset);
         int endY = isMarker ? (centerY + bound) : (centerY - offset + actualSize - 1);
 
+        boolean isColorTool = (this.activeTool == Tool.COLOR_PENCIL || this.activeTool == Tool.COLOR_MARKER);
+        int slot = paintSlot(this.activeTool);
+        int paintColorId = isColorTool ? ToolWear.getActiveColorId(getActiveToolStack()) : -1;
+
         for (int x = startX; x <= endX; x++) {
             for (int y = startY; y <= endY; y++) {
 
@@ -1121,7 +1203,7 @@ public class SketchbookScreen extends Screen {
                         if (pixels[x][y] != 0) {
                             pixels[x][y] = 0;
                             this.isCanvasDirty = true;
-                            this.eraserPixelsUsed++;
+                            this.kneadedPixelsUsed++;
                         }
                     } else {
                         if (this.strokePixels == null) this.strokePixels = new boolean[this.canvasWidth * this.resolutionMultiplier][this.canvasHeight * this.resolutionMultiplier];
@@ -1176,10 +1258,13 @@ public class SketchbookScreen extends Screen {
                             int newColor = net.avizvul.esquissemod.util.ColorUtils.lerpColor(destColor, sourceColor, sourceInfluence);
                             if (pixels[x][y] != newColor) {
                                 pixels[x][y] = newColor;
+                                this.smudgePixelsUsed++;
                                 this.isCanvasDirty = true;
                                 this.strokePixels[x][y] = true;
                             }
                         } else {
+                            if (isColorTool && (paintColorId < 0 || this.paintLevel[slot][paintColorId] <= 0)) continue;
+
                             int brushRgb = 0x111111;
                             net.minecraft.world.item.ItemStack activeColorStack = (this.activeTool == Tool.COLOR_MARKER) ? getColorMarkerStack() : getColorPencilStack();
 
@@ -1204,7 +1289,11 @@ public class SketchbookScreen extends Screen {
                             if (pixels[x][y] != blendedColor) {
                                 this.isCanvasDirty = true;
                                 pixels[x][y] = blendedColor;
-                                this.pencilPixelsUsed++;
+                                if (isColorTool) {
+                                    spendPaint(slot, paintColorId);
+                                } else {
+                                    this.pencilPixelsUsed++;
+                                }
                                 this.strokePixels[x][y] = true;
                             }
                         }
@@ -1301,9 +1390,11 @@ public class SketchbookScreen extends Screen {
 
                 SketchData currentData = SketchData.fromArrayAndTexts(this.pixels, this.textElements);
 
+                sendPageSave(currentData);
                 net.neoforged.neoforge.network.PacketDistributor.sendToServer(
-                        new SketchbookSavePayload(this.currentPageIndex, currentData, this.pencilPixelsUsed, this.eraserPixelsUsed)
+                        new TearPagePayload(this.currentPageIndex, currentData)
                 );
+
                 net.neoforged.neoforge.network.PacketDistributor.sendToServer(
                         new TearPagePayload(this.currentPageIndex, currentData)
                 );
@@ -1457,6 +1548,10 @@ public class SketchbookScreen extends Screen {
                         for (Swatch swatch : getPaletteLayout()) {
                             if (mouseX >= swatch.x() && mouseX < swatch.x() + swatchSize && mouseY >= swatch.y() && mouseY < swatch.y() + swatchSize) {
                                 if (colors.contains(swatch.colorId())) {
+                                    int slot = paintSlot(effectiveTool);
+                                    if (this.paintLevel[slot][swatch.colorId()] <= 0) {
+                                        return true; // краска закончилась, цвет не выбирается (клик поглощаем, чтобы не рисовать под палитрой)
+                                    }
                                     int colorIndex = colors.indexOf(swatch.colorId());
                                     activeColorStack.set(ModDataComponents.ACTIVE_COLOR_INDEX.get(), colorIndex);
                                     net.neoforged.neoforge.network.PacketDistributor.sendToServer(
@@ -1514,8 +1609,8 @@ public class SketchbookScreen extends Screen {
                 }
 
                 if ((this.activeTool == Tool.PENCIL && hasPencil) ||
-                        (this.activeTool == Tool.COLOR_PENCIL && hasColorPencil && hasColors) ||
-                        (this.activeTool == Tool.COLOR_MARKER && hasColorMarker && hasColors) ||
+                        (this.activeTool == Tool.COLOR_PENCIL && hasColorPencil && hasColors && hasActivePaint(Tool.COLOR_PENCIL)) ||
+                        (this.activeTool == Tool.COLOR_MARKER && hasColorMarker && hasColors && hasActivePaint(Tool.COLOR_MARKER)) ||
                         (this.activeTool == Tool.SMUDGE && hasSmudge)) {
                     this.isDrawing = true;
                     this.lastLogicalX = drawLogical[0];
@@ -2369,9 +2464,7 @@ public class SketchbookScreen extends Screen {
             }
         }
 
-        net.neoforged.neoforge.network.PacketDistributor.sendToServer(
-                new SketchbookSavePayload(this.currentPageIndex, data, this.pencilPixelsUsed, this.eraserPixelsUsed)
-        );
+        sendPageSave(data);
 
         if (this.activeCanvasId != null) {
             net.minecraft.client.Minecraft.getInstance().getTextureManager().release(this.activeCanvasId);

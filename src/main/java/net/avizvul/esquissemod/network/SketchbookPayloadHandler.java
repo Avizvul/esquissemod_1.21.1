@@ -4,6 +4,7 @@ import net.avizvul.esquissemod.component.ModDataComponents;
 import net.avizvul.esquissemod.component.SketchData;
 import net.avizvul.esquissemod.item.ModItems;
 import net.avizvul.esquissemod.menu.PrinterMenu;
+import net.avizvul.esquissemod.util.ToolWear;
 import net.minecraft.core.NonNullList;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.server.level.ServerLevel;
@@ -33,8 +34,6 @@ public class SketchbookPayloadHandler {
         return list;
     }
 
-    // --- 1. ОБРАБОТКА СОХРАНЕНИЯ СТРАНИЦЫ И ИЗНОСА ИНСТРУМЕНТОВ ---
-
     public void handleData(final SketchbookSavePayload payload, final IPayloadContext context) {
         context.enqueueWork(() -> {
             Player player = context.player();
@@ -57,13 +56,55 @@ public class SketchbookPayloadHandler {
             }
 
             if (player.level() instanceof ServerLevel serverLevel) {
-                damageTool(player, serverLevel, ModItems.PENCIL.get(), payload.pencilPixels() / 100);
-                damageTool(player, serverLevel, ModItems.ERASER.get(), payload.eraserPixels() / 100);
+                int ppd = ToolWear.PIXELS_PER_DAMAGE;
+                damageTool(player, serverLevel, ModItems.PENCIL.get(), payload.pencilPixels() / ppd);
+                damageTool(player, serverLevel, ModItems.ERASER.get(), payload.eraserPixels() / ppd);
+                damageTool(player, serverLevel, ModItems.KNEADED_ERASER.get(), payload.kneadedPixels() / ppd);
+                damageTool(player, serverLevel, ModItems.SMUDGE.get(), payload.smudgePixels() / ppd);
             }
         });
     }
 
-    // --- 2. ОБРАБОТКА ОТРЫВА СТРАНИЦЫ ИЗ СКЕТЧБУКА ---
+    public void handlePaintUsage(final PaintUsagePayload payload, final IPayloadContext context) {
+        context.enqueueWork(() -> {
+            Player player = context.player();
+            if (player.getAbilities().instabuild) return;
+            Item target = payload.isMarker() ? ModItems.COLOR_MARKER.get() : ModItems.COLOR_PENCIL.get();
+            modifyTool(player, target, stack -> ToolWear.consumePaint(stack, payload.units()));
+        });
+    }
+
+    private static void damageTool(Player player, ServerLevel level, Item toolItem, int damageAmount) {
+        if (damageAmount <= 0) return;
+        modifyTool(player, toolItem, stack ->
+                stack.hurtAndBreak(damageAmount, level, (ServerPlayer) player, p -> {}));
+    }
+
+    /** Ищет первый инструмент в инвентаре (включая левую руку) и внутри пенала и применяет к нему действие. */
+    private static boolean modifyTool(Player player, Item target, java.util.function.Consumer<ItemStack> action) {
+        var inv = player.getInventory();
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            ItemStack stack = inv.getItem(i);
+            if (stack.is(target)) {
+                action.accept(stack);
+                return true;
+            }
+            if (stack.is(ModItems.PENCIL_CASE.get()) && stack.has(DataComponents.CONTAINER)) {
+                ItemContainerContents contents = stack.get(DataComponents.CONTAINER);
+                if (contents == null) continue;
+                NonNullList<ItemStack> items = NonNullList.withSize(9, ItemStack.EMPTY);
+                contents.copyInto(items);
+                for (ItemStack inner : items) {
+                    if (inner.is(target)) {
+                        action.accept(inner); // inner — копия, поэтому ниже перезаписываем контейнер
+                        stack.set(DataComponents.CONTAINER, ItemContainerContents.fromItems(items));
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
 
     public void handleTearPage(final TearPagePayload payload, final IPayloadContext context) {
         context.enqueueWork(() -> {
@@ -110,8 +151,6 @@ public class SketchbookPayloadHandler {
         });
     }
 
-    // --- 3. ОБРАБОТКА ПЕРЕКЛЮЧЕНИЯ ЦВЕТА ---
-
     public void handleChangeColor(final ChangeColorPayload payload, final IPayloadContext context) {
         context.enqueueWork(() -> {
             Player player = context.player();
@@ -141,8 +180,6 @@ public class SketchbookPayloadHandler {
             }
         });
     }
-
-    // --- 4. ОБРАБОТКА НАСТРОЕК КИСТИ ---
 
     public void handleToolSettings(final ToolSettingsPayload payload, final IPayloadContext context) {
         context.enqueueWork(() -> {
@@ -191,8 +228,6 @@ public class SketchbookPayloadHandler {
             }
         });
     }
-
-    // --- 5. ОБРАБОТКА ДЕЙСТВИЯ ПРИНТЕРА ---
 
     public void handlePrinterAction(final PrinterActionPayload payload, final IPayloadContext context) {
         context.enqueueWork(() -> {
@@ -245,15 +280,5 @@ public class SketchbookPayloadHandler {
                 }
             }
         });
-    }
-
-    private static void damageTool(Player player, ServerLevel level, Item toolItem, int damageAmount) {
-        if (damageAmount <= 0) return;
-        for (ItemStack stack : player.getInventory().items) {
-            if (stack.is(toolItem)) {
-                stack.hurtAndBreak(damageAmount, level, (ServerPlayer) player, p -> {});
-                return;
-            }
-        }
     }
 }

@@ -2,6 +2,7 @@ package net.avizvul.esquissemod.item.custom;
 
 import net.avizvul.esquissemod.component.ModDataComponents;
 import net.avizvul.esquissemod.item.custom.base.DrawingToolItem;
+import net.avizvul.esquissemod.util.ToolWear;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.world.entity.SlotAccess;
 import net.minecraft.world.entity.player.Player;
@@ -21,37 +22,53 @@ public class ColorPencilItem extends DrawingToolItem {
 
     @Override
     public boolean overrideOtherStackedOnMe(ItemStack stack, ItemStack other, Slot slot, ClickAction action, Player player, SlotAccess access) {
-        // Проверяем, что клик был ПКМ (SECONDARY) [1]
-        if (action == ClickAction.SECONDARY && slot.allowModification(player)) {
+        if (action == ClickAction.SECONDARY && slot.allowModification(player) && other.getItem() instanceof DyeItem dye) {
+            int colorId = dye.getDyeColor().getId();
+            List<Integer> colors = new ArrayList<>(stack.getOrDefault(ModDataComponents.STORED_COLORS.get(), new ArrayList<>()));
+            boolean known = colors.contains(colorId);
 
-            // Самый надежный способ проверить краситель в 1.21 — проверить инстанс класса DyeItem
-            if (other.getItem() instanceof DyeItem dye) {
-                int colorId = dye.getDyeColor().getId(); // Получаем ID цвета (0-15)
-
-                // Достаем текущий список цветов из карандаша
-                List<Integer> colors = new ArrayList<>(stack.getOrDefault(ModDataComponents.STORED_COLORS.get(), new ArrayList<>()));
-
-                // Проверяем, что карандаш еще не содержит этот цвет и лимит в 16 цветов не превышен
-                if (!colors.contains(colorId) && colors.size() < 16) {
-                    colors.add(colorId);
-
-                    // Обновляем компонент предмета
-                    stack.set(ModDataComponents.STORED_COLORS.get(), colors);
-
-                    // СРАЗУ переключаем активный цвет на только что добавленный (он теперь последний в списке)
-                    stack.set(ModDataComponents.ACTIVE_COLOR_INDEX.get(), colors.size() - 1);
-
-                    // Тратим 1 краситель с курсора [3]
-                    other.shrink(1);
-
-                    // Воспроизводим звук (как при покраске ошейника или брони)
-                    player.playSound(SoundEvents.DYE_USE, 1.0f, 1.0f);
-
-                    return true; // Успешно "впитали" цвет
-                }
+            // Цвет уже полный, заправлять нечего
+            if (known && ToolWear.getPaintLevel(stack, colorId) >= ToolWear.MAX_PAINT) {
+                return super.overrideOtherStackedOnMe(stack, other, slot, action, player, access);
             }
+
+            if (!known) {
+                if (colors.size() >= ToolWear.COLOR_COUNT) {
+                    return super.overrideOtherStackedOnMe(stack, other, slot, action, player, access);
+                }
+                colors.add(colorId);
+                stack.set(ModDataComponents.STORED_COLORS.get(), colors);
+            }
+
+            ToolWear.setPaintLevel(stack, colorId, ToolWear.MAX_PAINT);
+            stack.set(ModDataComponents.ACTIVE_COLOR_INDEX.get(), colors.indexOf(colorId));
+
+            other.shrink(1);
+            player.playSound(SoundEvents.DYE_USE, 1.0f, 1.0f);
+            return true;
         }
         return super.overrideOtherStackedOnMe(stack, other, slot, action, player, access);
+    }
+
+    // --- Полоска вместо прочности: остаток краски активного цвета ---
+    @Override
+    public boolean isBarVisible(ItemStack stack) {
+        int id = ToolWear.getActiveColorId(stack);
+        return id >= 0 && ToolWear.getPaintLevel(stack, id) < ToolWear.MAX_PAINT;
+    }
+
+    @Override
+    public int getBarWidth(ItemStack stack) {
+        int id = ToolWear.getActiveColorId(stack);
+        if (id < 0) return 0;
+        return Math.round(13.0f * ToolWear.getPaintLevel(stack, id) / ToolWear.MAX_PAINT);
+    }
+
+    @Override
+    public int getBarColor(ItemStack stack) {
+        int id = ToolWear.getActiveColorId(stack);
+        if (id < 0) return 0xFFDDDDDD;
+        return net.minecraft.world.item.DyeColor.byId(id).getTextureDiffuseColor() | 0xFF000000;
     }
 
     @Override

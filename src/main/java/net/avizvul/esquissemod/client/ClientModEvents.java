@@ -16,7 +16,8 @@ public class ClientModEvents {
     @SubscribeEvent
     public static void registerTooltipComponents(RegisterClientTooltipComponentFactoriesEvent event) {
         // Говорим игре: "Когда встретишь SketchedPageTooltipData, используй ClientSketchedPageTooltip для отрисовки"
-        event.register(SketchedPageTooltipData.class, ClientSketchedPageTooltip::new);
+        event.register(net.avizvul.esquissemod.client.tooltip.StampTooltipData.class,
+                net.avizvul.esquissemod.client.tooltip.ClientStampTooltip::new);
     }
 
     @SubscribeEvent
@@ -45,7 +46,9 @@ public class ClientModEvents {
 
             // Для деревянного корпуса (layer0) возвращаем -1, чтобы игра его не фильтровала
             return -1;
-        }, net.avizvul.esquissemod.item.ModItems.COLOR_PENCIL.get(), net.avizvul.esquissemod.item.ModItems.COLOR_MARKER.get());
+                }, net.avizvul.esquissemod.item.ModItems.COLOR_PENCIL.get(),
+                net.avizvul.esquissemod.item.ModItems.COLOR_MARKER.get(),
+                net.avizvul.esquissemod.item.ModItems.STAMP_PAD.get());
 
     }
 
@@ -59,5 +62,6 @@ public class ClientModEvents {
     public static void registerScreens(net.neoforged.neoforge.client.event.RegisterMenuScreensEvent event) {
         event.register(net.avizvul.esquissemod.menu.ModMenuTypes.PENCIL_CASE_MENU.get(), net.avizvul.esquissemod.client.screen.PencilCaseScreen::new);
         event.register(net.avizvul.esquissemod.menu.ModMenuTypes.PRINTER_MENU.get(), net.avizvul.esquissemod.client.screen.PrinterScreen::new);
+        event.register(net.avizvul.esquissemod.menu.ModMenuTypes.ALBUM_MENU.get(), net.avizvul.esquissemod.client.screen.AlbumScreen::new);
     }
 }

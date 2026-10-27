@@ -124,6 +124,18 @@ public class EsquisseMod {
                 handler::handlePaintUsage
         );
 
+        registrar.playToServer(
+                net.avizvul.esquissemod.network.SignPagePayload.TYPE,
+                net.avizvul.esquissemod.network.SignPagePayload.STREAM_CODEC,
+                handler::handleSignPage
+        );
+
+        registrar.playToServer(
+                net.avizvul.esquissemod.network.SealStampPayload.TYPE,
+                net.avizvul.esquissemod.network.SealStampPayload.STREAM_CODEC,
+                handler::handleSealStamp
+        );
+
     }
 
     private void commonSetup(FMLCommonSetupEvent event) {

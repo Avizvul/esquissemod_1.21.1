@@ -9,6 +9,11 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.avizvul.esquissemod.client.ClientHooks;
 import net.minecraft.world.level.block.state.BlockState;
+import java.util.List;
+import net.minecraft.ChatFormatting;
+import net.minecraft.world.item.TooltipFlag;
+import net.avizvul.esquissemod.component.ModDataComponents;
+import net.minecraft.network.chat.Component;
 
 public class SketchedPageItem extends Item {
 
@@ -62,6 +67,7 @@ public class SketchedPageItem extends Item {
                 net.avizvul.esquissemod.component.SketchData data = context.getItemInHand().get(net.avizvul.esquissemod.component.ModDataComponents.PAGE_DATA.get());
                 if (data != null) {
                     pageEntity.setSketchData(data); // Передаем данные!
+                    pageEntity.readMetaFrom(context.getItemInHand());
                 }
             }
 
@@ -81,8 +87,7 @@ public class SketchedPageItem extends Item {
 
         // ВАЖНО: Вызываем код графического интерфейса ТОЛЬКО если мы на клиенте (isClientSide = true)
         if (level.isClientSide()) {
-            // Безопасный вызов изолированного клиентского кода [5, 6]
-            ClientHooks.openSketchedPageScreen(stack);
+            ClientHooks.openSketchedPageScreen(stack, hand);
         }
 
         return InteractionResultHolder.sidedSuccess(stack, level.isClientSide());
@@ -105,5 +110,21 @@ public class SketchedPageItem extends Item {
             return java.util.Optional.of(new net.avizvul.esquissemod.client.tooltip.SketchedPageTooltipData(data));
         }
         return java.util.Optional.empty();
+    }
+
+    @Override
+    public void appendHoverText(ItemStack stack, TooltipContext context, List<Component> tooltip, TooltipFlag flag) {
+        // Автор виден только после подписи
+        if (stack.getOrDefault(ModDataComponents.PAGE_SIGNED.get(), false)) {
+            String author = stack.get(ModDataComponents.PAGE_AUTHOR.get());
+            if (author != null && !author.isEmpty()) {
+                tooltip.add(Component.translatable("tooltip.esquissemod.author", author)
+                        .withStyle(ChatFormatting.GRAY));
+            }
+        }
+        if (stack.getOrDefault(ModDataComponents.PAGE_COPIED.get(), false)) {
+            tooltip.add(Component.translatable("tooltip.esquissemod.copied")
+                    .withStyle(ChatFormatting.GRAY));
+        }
     }
 }

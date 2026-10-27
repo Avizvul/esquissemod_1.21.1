@@ -38,8 +38,16 @@ public class SketchbookScreen extends Screen {
     private static final ResourceLocation COMPASS_BTN_TEX = ResourceLocation.fromNamespaceAndPath(EsquisseMod.MOD_ID, "textures/gui/button_drawing_compass.png");
     private static final ResourceLocation COLOR_MARKER_TEX = ResourceLocation.fromNamespaceAndPath(EsquisseMod.MOD_ID, "textures/gui/button_color_marker_base.png");
     private static final ResourceLocation COLOR_MARKER_TINT_TEX = ResourceLocation.fromNamespaceAndPath(EsquisseMod.MOD_ID, "textures/gui/button_color_marker_tint.png");
+    private static final ResourceLocation RULER_TEX = ResourceLocation.fromNamespaceAndPath(EsquisseMod.MOD_ID, "textures/gui/ruler.png");
 
-    private enum Tool { PENCIL, COLOR_PENCIL, ERASER, SMUDGE, KNEADED_ERASER, COLOR_MARKER, TEXT }
+    private static final ResourceLocation STAMP_BTN_TEX = ResourceLocation.fromNamespaceAndPath(EsquisseMod.MOD_ID, "textures/gui/button_stamp_base.png");
+    private static final ResourceLocation STAMP_BTN_TINT_TEX = ResourceLocation.fromNamespaceAndPath(EsquisseMod.MOD_ID, "textures/gui/button_stamp_tint.png");
+    /** Высота одного состояния кнопки в текстуре (16×32 = два состояния по 16). */
+    private static final int STAMP_STATE_HEIGHT = 16;
+    private static final net.minecraft.world.level.levelgen.synth.ImprovedNoise STAMP_NOISE =
+            new net.minecraft.world.level.levelgen.synth.ImprovedNoise(net.minecraft.util.RandomSource.create(7L));
+
+    private enum Tool { PENCIL, COLOR_PENCIL, ERASER, SMUDGE, KNEADED_ERASER, COLOR_MARKER, TEXT, STAMP }
 
     private Tool activeTool = Tool.PENCIL;
     private final int fileWidth = 74;
@@ -57,10 +65,15 @@ public class SketchbookScreen extends Screen {
     private int kneadedPixelsUsed = 0;
     private int smudgePixelsUsed = 0;
 
+    private int stampIndex = 0;      // какой из найденных штампов выбран
+    private int stampRotation = 0;   // шаги по 15°, 0..23
+    private boolean[][] cachedStampMask;
+    private int cachedMaskKey;
+
     // Краска. Первый индекс: 0 = цветной карандаш, 1 = маркер. Второй: ID красителя (0..15)
-    private final int[][] paintLevel = new int[2][ToolWear.COLOR_COUNT];        // остаток в единицах (для GUI)
-    private final int[][] paintPixels = new int[2][ToolWear.COLOR_COUNT];       // накопитель пикселей до следующей единицы
-    private final int[][] paintPendingUnits = new int[2][ToolWear.COLOR_COUNT]; // потрачено, но ещё не отправлено серверу
+    private final int[][] paintLevel = new int[3][ToolWear.COLOR_COUNT];
+    private final int[][] paintPixels = new int[3][ToolWear.COLOR_COUNT];
+    private final int[][] paintPendingUnits = new int[3][ToolWear.COLOR_COUNT];
     private boolean isPaintLoaded = false;
 
     private final int scale = 3;
@@ -91,7 +104,7 @@ public class SketchbookScreen extends Screen {
     private static float savedRotationAngle = 0.0f;
     private static boolean hasSavedState = false;
 
-    private static final ResourceLocation RULER_TEX = ResourceLocation.fromNamespaceAndPath(EsquisseMod.MOD_ID, "textures/gui/ruler.png");
+
     private final int rulerWidth = 398;
     private final int rulerHeight = 40;
 
@@ -254,8 +267,7 @@ public class SketchbookScreen extends Screen {
         return new TabCoords(tabX, backTabY, forwardTabY);
     }
 
-    private record ToolButtonCoords(int scaledBtnWidth, int scaledBtnHeight, int pencilX, int colorPencilX, int colorMarkerX, int eraserX, int kneadedX, int smudgeX, int rulerX, int magGlassX, int compassX, int peekY) {}
-
+    private record ToolButtonCoords(int scaledBtnWidth, int scaledBtnHeight, int pencilX, int colorPencilX, int colorMarkerX, int eraserX, int kneadedX, int smudgeX, int rulerX, int magGlassX, int compassX, int stampX, int peekY) {}
     private ToolButtonCoords getToolButtonCoords() {
         int scaledBtnWidth = this.buttonWidth * this.buttonScale;
         int scaledBtnHeight = this.buttonHeight * this.buttonScale;
@@ -275,12 +287,12 @@ public class SketchbookScreen extends Screen {
         boolean hasColorPencil = !colorPencilStack.isEmpty();
         boolean hasColorMarker = hasTool(ModItems.COLOR_MARKER.get());
 
-        int pencilX = -1000, colorPencilX = -1000, colorMarkerX = -1000, eraserX = -1000, kneadedX = -1000, smudgeX = -1000, rulerX = -1000, magGlassX = -1000, compassX = -1000;
-
+        int pencilX = -1000, colorPencilX = -1000, colorMarkerX = -1000, eraserX = -1000, kneadedX = -1000, smudgeX = -1000, rulerX = -1000, magGlassX = -1000, compassX = -1000, stampX = -1000;
         int leftX = (this.width / 2) - 100 - scaledBtnWidth;
         if (hasRuler) { rulerX = leftX; leftX -= (scaledBtnWidth + 5); }
         if (hasMagGlass) { magGlassX = leftX; leftX -= (scaledBtnWidth + 5); }
         if (hasCompass) { compassX = leftX; }
+        if (hasStampTool()) { stampX = leftX; }
 
         if (hasPencil) { pencilX = currentX; currentX += scaledBtnWidth + 5; }
         if (hasColorPencil) { colorPencilX = currentX; currentX += scaledBtnWidth + 5; }
@@ -289,8 +301,7 @@ public class SketchbookScreen extends Screen {
         if (hasKneaded) { kneadedX = currentX; currentX += scaledBtnWidth + 5; }
         if (hasSmudge) { smudgeX = currentX; currentX += scaledBtnWidth + 5; }
 
-        return new ToolButtonCoords(scaledBtnWidth, scaledBtnHeight, pencilX, colorPencilX, colorMarkerX, eraserX, kneadedX, smudgeX, rulerX, magGlassX, compassX, peekY);
-    }
+        return new ToolButtonCoords(scaledBtnWidth, scaledBtnHeight, pencilX, colorPencilX, colorMarkerX, eraserX, kneadedX, smudgeX, rulerX, magGlassX, compassX, stampX, peekY);    }
 
     public void turnPage(int newPageIndex) {
         net.minecraft.world.item.ItemStack stack = this.minecraft.player.getMainHandItem();
@@ -443,6 +454,246 @@ public class SketchbookScreen extends Screen {
     private net.minecraft.world.item.ItemStack getColorMarkerStack() {
         return findItemStack(ModItems.COLOR_MARKER.get());
     }
+// ===================== ШТАМП =====================
+
+    private ItemStack getStampPadStack() {
+        return findItemStack(ModItems.STAMP_PAD.get());
+    }
+
+    /** Все запечатанные штампы игрока: инвентарь, левая рука и пеналы. */
+    private List<ItemStack> getStamps() {
+        List<ItemStack> result = new ArrayList<>();
+        if (this.minecraft == null || this.minecraft.player == null) return result;
+
+        List<ItemStack> sources = new ArrayList<>(this.minecraft.player.getInventory().items);
+        sources.addAll(this.minecraft.player.getInventory().offhand);
+
+        for (ItemStack s : sources) {
+            collectStamp(s, result);
+            if (s.is(ModItems.PENCIL_CASE.get()) && s.has(net.minecraft.core.component.DataComponents.CONTAINER)) {
+                net.minecraft.core.NonNullList<ItemStack> items = net.minecraft.core.NonNullList.withSize(9, ItemStack.EMPTY);
+                s.get(net.minecraft.core.component.DataComponents.CONTAINER).copyInto(items);
+                for (ItemStack inner : items) collectStamp(inner, result);
+            }
+        }
+        return result;
+    }
+
+    private void collectStamp(ItemStack s, List<ItemStack> out) {
+        if (s.getItem() instanceof net.avizvul.esquissemod.item.custom.StampItem
+                && net.avizvul.esquissemod.item.custom.StampItem.isSealed(s)) {
+            out.add(s);
+        }
+    }
+
+    private boolean hasStampTool() {
+        return !getStampPadStack().isEmpty() && !getStamps().isEmpty();
+    }
+
+    private ItemStack getSelectedStamp() {
+        List<ItemStack> list = getStamps();
+        if (list.isEmpty()) return ItemStack.EMPTY;
+        this.stampIndex = Math.floorMod(this.stampIndex, list.size());
+        return list.get(this.stampIndex);
+    }
+
+    private boolean canStamp() {
+        return this.activeTool == Tool.STAMP && hasActivePaint(Tool.STAMP) && getStampMask() != null;
+    }
+
+    /** Повёрнутая маска выбранного штампа (кэшируется, пересчитывается при смене штампа или угла). */
+    private boolean[][] getStampMask() {
+        ItemStack stamp = getSelectedStamp();
+        if (stamp.isEmpty()) return null;
+        List<Integer> rows = stamp.get(ModDataComponents.STAMP_BITS.get());
+        if (rows == null || rows.isEmpty()) return null;
+
+        int key = rows.hashCode() * 31 + this.stampRotation;
+        if (this.cachedStampMask != null && this.cachedMaskKey == key) return this.cachedStampMask;
+
+        this.cachedStampMask = buildStampMask(rows, this.stampRotation);
+        this.cachedMaskKey = key;
+        return this.cachedStampMask;
+    }
+
+    /** Обратное отображение: для каждого пикселя результата берём точку исходной маски, поэтому дыр нет. Сторона всегда чётная. */
+    private static boolean[][] buildStampMask(List<Integer> rows, int rotStep) {
+        int s = rows.size();
+        double rad = Math.toRadians(rotStep * 15.0);
+        double cos = Math.cos(rad), sin = Math.sin(rad);
+
+        int d = (int) Math.ceil(s * (Math.abs(cos) + Math.abs(sin)));
+        if (d % 2 != 0) d++;
+
+        boolean[][] mask = new boolean[d][d];
+        double half = d / 2.0, srcHalf = s / 2.0;
+        for (int ox = 0; ox < d; ox++) {
+            for (int oy = 0; oy < d; oy++) {
+                double px = ox + 0.5 - half;
+                double py = oy + 0.5 - half;
+                double sx = px * cos + py * sin + srcHalf;
+                double sy = -px * sin + py * cos + srcHalf;
+                int ix = (int) Math.floor(sx), iy = (int) Math.floor(sy);
+                if (ix >= 0 && ix < s && iy >= 0 && iy < s) {
+                    mask[ox][oy] = ((rows.get(iy) >> ix) & 1) != 0;
+                }
+            }
+        }
+        return mask;
+    }
+
+    /** Телеграф: рисуется в том же масштабе, что и телеграф кисти, и использует ту же маску, что и оттиск. */
+    private void renderStampPreview(GuiGraphics g, double lMouseX, double lMouseY, int scaledCanvasLeft, int scaledCanvasTop, int canvasScreenLeft, int renderY) {
+        if (!canStamp()) return;
+        boolean[][] mask = getStampMask();
+        int d = mask.length;
+        double cell = (double) this.scale / this.resolutionMultiplier;
+
+        int ax = (int) Math.round((lMouseX - canvasScreenLeft) / cell);
+        int ay = (int) Math.round((lMouseY - renderY) / cell);
+        int ox = ax - d / 2, oy = ay - d / 2;
+
+        int colorId = ToolWear.getActiveColorId(getStampPadStack());
+        int color = net.minecraft.world.item.DyeColor.byId(colorId).getTextureDiffuseColor() | 0x80000000;
+        int w = this.canvasWidth * this.resolutionMultiplier;
+        int h = this.canvasHeight * this.resolutionMultiplier;
+
+        for (int x = 0; x < d; x++) {
+            for (int y = 0; y < d; y++) {
+                if (!mask[x][y]) continue;
+                int cx = ox + x, cy = oy + y;
+                if (cx < 0 || cx >= w || cy < 0 || cy >= h) continue;
+                int px = scaledCanvasLeft + cx * this.scale;
+                int py = scaledCanvasTop + cy * this.scale;
+                g.fill(px, py, px + this.scale, py + this.scale, color);
+            }
+        }
+    }
+
+    /** Оттиск: учитывает вращение, пиксельную сетку и шум (прозрачность 75–100%). */
+    private void stampAt(double lMouseX, double lMouseY) {
+        if (!canStamp()) return;
+        boolean[][] mask = getStampMask();
+        int d = mask.length;
+
+        int canvasScreenLeft = (int) this.exactGuiLeft + ((this.frameWidth + this.deadZoneWidth) * this.scale);
+        int canvasScreenTop = (int) this.exactGuiTop;
+        double cell = (double) this.scale / this.resolutionMultiplier;
+
+        int ax = (int) Math.round((lMouseX - canvasScreenLeft) / cell);
+        int ay = (int) Math.round((lMouseY - canvasScreenTop) / cell);
+        int ox = ax - d / 2, oy = ay - d / 2;
+
+        int colorId = ToolWear.getActiveColorId(getStampPadStack());
+        int rgb = net.minecraft.world.item.DyeColor.byId(colorId).getTextureDiffuseColor() & 0xFFFFFF;
+        int slot = paintSlot(Tool.STAMP);
+
+        int w = this.canvasWidth * this.resolutionMultiplier;
+        int h = this.canvasHeight * this.resolutionMultiplier;
+
+        // Каждый оттиск получает своё смещение шума, поэтому узор у каждого уникален
+        net.minecraft.util.RandomSource rnd = net.minecraft.util.RandomSource.create();
+        double offX = rnd.nextDouble() * 1000.0, offY = rnd.nextDouble() * 1000.0;
+
+        boolean changed = false;
+        outer:
+        for (int x = 0; x < d; x++) {
+            for (int y = 0; y < d; y++) {
+                if (!mask[x][y]) continue;
+                int px = ox + x, py = oy + y;
+                if (px < 0 || px >= w || py < 0 || py >= h) continue;
+                if (this.paintLevel[slot][colorId] <= 0) break outer; // краска кончилась посреди оттиска
+
+                double n1 = STAMP_NOISE.noise(px * 0.35 + offX, py * 0.35 + offY, 0.0);
+                double n2 = STAMP_NOISE.noise(px * 1.1 + offY, py * 1.1 + offX, 7.0);
+                double n = Math.max(0.0, Math.min(1.0, 0.5 + 0.7 * (0.75 * n1 + 0.25 * n2)));
+                int alpha = 191 + (int) Math.round(n * 64.0); // 75%..100%
+
+                int blended = net.avizvul.esquissemod.util.ColorUtils.blendColors(this.pixels[px][py], (alpha << 24) | rgb);
+                if (this.pixels[px][py] != blended) {
+                    this.pixels[px][py] = blended;
+                    changed = true;
+                    spendPaint(slot, colorId);
+                }
+            }
+        }
+
+        if (changed) {
+            this.isCanvasDirty = true;
+            if (this.minecraft != null && this.minecraft.player != null) {
+                this.minecraft.player.playSound(net.minecraft.sounds.SoundEvents.BOOK_PUT, 0.8f, 1.2f);
+            }
+            sendToolUsage(); // сразу отправляем расход краски
+        }
+    }
+
+// ----- Кнопка штампа (текстура 16×64: два состояния по 32) -----
+
+    private int stampBtnW() { return 16 * this.buttonScale; }
+    private int stampBtnH() { return STAMP_STATE_HEIGHT * this.buttonScale; }
+
+    private int stampBtnY(boolean selected) {
+        int h = stampBtnH();
+        return selected ? this.height - h : this.height - h / 2; // в покое наполовину за краем экрана
+    }
+
+    private boolean isOverStampButton(double mouseX, double mouseY, int x) {
+        int y = stampBtnY(this.activeTool == Tool.STAMP);
+        return mouseX >= x && mouseX < x + stampBtnW() && mouseY >= y && mouseY < y + stampBtnH();
+    }
+
+    private void renderStampButton(GuiGraphics g, int mouseX, int mouseY, int x) {
+        int w = stampBtnW(), h = stampBtnH();
+        int y = stampBtnY(this.activeTool == Tool.STAMP);
+        float v = isOverStampButton(mouseX, mouseY, x) ? (float) STAMP_STATE_HEIGHT : 0.0f;
+
+        g.blit(STAMP_BTN_TEX, x, y, w, h, 0.0f, v, 16, STAMP_STATE_HEIGHT, 16, STAMP_STATE_HEIGHT * 2);
+
+        ItemStack pad = getStampPadStack();
+        int rgb = 0xFFFFFF;
+        int activeId = ToolWear.getActiveColorId(pad);
+        if (activeId >= 0) {
+            rgb = (this.paintLevel[2][activeId] <= 0)
+                    ? 0x777777 // краска закончилась
+                    : net.minecraft.world.item.DyeColor.byId(activeId).getTextureDiffuseColor();
+        }
+        g.setColor(((rgb >> 16) & 0xFF) / 255.0f, ((rgb >> 8) & 0xFF) / 255.0f, (rgb & 0xFF) / 255.0f, 1.0f);
+        g.blit(STAMP_BTN_TINT_TEX, x, y, w, h, 0.0f, v, 16, STAMP_STATE_HEIGHT, 16, STAMP_STATE_HEIGHT * 2);
+        g.setColor(1.0f, 1.0f, 1.0f, 1.0f);
+    }
+
+    /** Миниатюра выбранного штампа над кнопкой, номер и угол поворота. */
+    private void renderStampThumbnail(GuiGraphics g, int stampX) {
+        ItemStack stamp = getSelectedStamp();
+        if (stamp.isEmpty()) return;
+        List<Integer> rows = stamp.get(ModDataComponents.STAMP_BITS.get());
+        if (rows == null) return;
+
+        int s = rows.size();
+        int cell = s <= 16 ? 2 : 1;
+        int box = s * cell + 4;
+        int bx = stampX + stampBtnW() / 2 - box / 2;
+        int by = stampBtnY(true) - box - 14;
+
+        g.fill(bx - 1, by - 1, bx + box + 1, by + box + 1, 0xFF000000);
+        g.fill(bx, by, bx + box, by + box, 0xFFE9E1D1);
+        for (int y = 0; y < s; y++) {
+            int row = rows.get(y);
+            int run = -1;
+            for (int x = 0; x <= s; x++) {
+                boolean on = x < s && ((row >> x) & 1) != 0;
+                if (on && run < 0) {
+                    run = x;
+                } else if (!on && run >= 0) {
+                    g.fill(bx + 2 + run * cell, by + 2 + y * cell, bx + 2 + x * cell, by + 2 + (y + 1) * cell, 0xFF2A2420);
+                    run = -1;
+                }
+            }
+        }
+
+        String info = (this.stampIndex + 1) + "/" + getStamps().size() + "  " + (this.stampRotation * 15) + "°";
+        g.drawCenteredString(this.font, info, stampX + stampBtnW() / 2, by - 10, 0xFFFFFFFF);
+    }
 
     private boolean isToolAvailable(Tool tool) {
         return switch (tool) {
@@ -453,6 +704,7 @@ public class SketchbookScreen extends Screen {
             case KNEADED_ERASER -> hasTool(ModItems.KNEADED_ERASER.get());
             case SMUDGE -> hasTool(ModItems.SMUDGE.get());
             case TEXT -> hasTool(ModItems.PENCIL.get()) || !getColorPencilStack().isEmpty();
+            case STAMP -> hasStampTool();
         };
     }
 
@@ -470,7 +722,24 @@ public class SketchbookScreen extends Screen {
     }
 
     private int paintSlot(Tool tool) {
-        return tool == Tool.COLOR_MARKER ? 1 : 0;
+        return switch (tool) {
+            case COLOR_MARKER -> 1;
+            case STAMP -> 2;
+            default -> 0;
+        };
+    }
+
+    /** Какой предмет хранит краску для инструмента. */
+    private ItemStack getColorStack(Tool tool) {
+        return switch (tool) {
+            case COLOR_MARKER -> getColorMarkerStack();
+            case STAMP -> getStampPadStack();
+            default -> getColorPencilStack();
+        };
+    }
+
+    private boolean isPaletteTool(Tool tool) {
+        return tool == Tool.COLOR_PENCIL || tool == Tool.COLOR_MARKER || tool == Tool.STAMP;
     }
 
     /** Загружаем остатки краски один раз при открытии: дальше экран ведёт учёт сам. */
@@ -478,6 +747,7 @@ public class SketchbookScreen extends Screen {
         if (this.isPaintLoaded) return;
         loadPaintFrom(getColorPencilStack(), 0);
         loadPaintFrom(getColorMarkerStack(), 1);
+        loadPaintFrom(getStampPadStack(), 2);
         this.isPaintLoaded = true;
     }
 
@@ -489,7 +759,7 @@ public class SketchbookScreen extends Screen {
 
     /** Есть ли краска в активном цвете цветного инструмента. */
     private boolean hasActivePaint(Tool tool) {
-        ItemStack stack = (tool == Tool.COLOR_MARKER) ? getColorMarkerStack() : getColorPencilStack();
+        ItemStack stack = getColorStack(tool);
         int colorId = ToolWear.getActiveColorId(stack);
         return colorId >= 0 && this.paintLevel[paintSlot(tool)][colorId] > 0;
     }
@@ -547,7 +817,7 @@ public class SketchbookScreen extends Screen {
                 if (u > 0) any = true;
             }
             if (any) {
-                net.neoforged.neoforge.network.PacketDistributor.sendToServer(new PaintUsagePayload(slot == 1, units));
+                net.neoforged.neoforge.network.PacketDistributor.sendToServer(new PaintUsagePayload(slot, units));
             }
         }
     }
@@ -720,6 +990,9 @@ public class SketchbookScreen extends Screen {
             if (!this.isDragging && !this.isRotating && lMouseHover[0]
                     >= canvasScreenLeft && lMouseHover[0] < (canvasScreenLeft + scaledCanvasWidth) && lMouseHover[1]
                     >= renderY && lMouseHover[1] < (renderY + scaledImageHeight)) {
+                if (this.activeTool == Tool.STAMP) {
+                    renderStampPreview(guiGraphics, lMouseHover[0], lMouseHover[1], scaledCanvasLeft, scaledCanvasTop, canvasScreenLeft, renderY);
+                }
                 boolean canDraw = (this.activeTool == Tool.PENCIL && hasPencil) ||
                         (this.activeTool == Tool.COLOR_PENCIL && hasPencilColors && hasActivePaint(Tool.COLOR_PENCIL)) ||
                         (this.activeTool == Tool.COLOR_MARKER && hasMarkerColors && hasActivePaint(Tool.COLOR_MARKER)) ||
@@ -827,6 +1100,10 @@ public class SketchbookScreen extends Screen {
         int scaledBtnHeight = toolCoords.scaledBtnHeight();
         int peekY = toolCoords.peekY();
 
+        if (this.activeTool == Tool.STAMP && toolCoords.stampX() <= -1000) {
+            this.activeTool = Tool.PENCIL; // штамп или подушка пропали из инвентаря
+        }
+
         boolean isPencilActive = (this.activeTool == Tool.PENCIL) || (this.activeTool == Tool.TEXT && this.previousDrawingTool == Tool.PENCIL);
         boolean isColorPencilActive = (this.activeTool == Tool.COLOR_PENCIL) || (this.activeTool == Tool.TEXT && this.previousDrawingTool == Tool.COLOR_PENCIL);
         boolean isColorMarkerActive = (this.activeTool == Tool.COLOR_MARKER) || (this.activeTool == Tool.TEXT && this.previousDrawingTool == Tool.COLOR_MARKER);
@@ -845,6 +1122,11 @@ public class SketchbookScreen extends Screen {
         if (hasRuler) renderToolButton(guiGraphics, mouseX, mouseY, this.isRulerActive, RULER_BTN_TEX, toolCoords.rulerX());
         if (hasMagGlass) renderToolButton(guiGraphics, mouseX, mouseY, this.isMagnifierLocked, MAGGLASS_BTN_TEX, toolCoords.magGlassX());
         if (hasCompass) renderToolButton(guiGraphics, mouseX, mouseY, this.compassState != CompassState.INACTIVE, COMPASS_BTN_TEX, toolCoords.compassX());
+
+        if (toolCoords.stampX() > -1000) {
+            renderStampButton(guiGraphics, mouseX, mouseY, toolCoords.stampX());
+            if (this.activeTool == Tool.STAMP) renderStampThumbnail(guiGraphics, toolCoords.stampX());
+        }
 
         int activeToolX = switch (effectiveTool) {
             case PENCIL -> toolCoords.pencilX();
@@ -868,12 +1150,11 @@ public class SketchbookScreen extends Screen {
 
         // 5. Круговая палитра для цветного карандаша и маркера (инструмент ищется в инвентаре/пенале, а не в руке)
         boolean enablePalette = (effectiveTool == Tool.COLOR_PENCIL && hasColorPencil) ||
-                (effectiveTool == Tool.COLOR_MARKER && hasColorMarker);
+                (effectiveTool == Tool.COLOR_MARKER && hasColorMarker) ||
+                (effectiveTool == Tool.STAMP && toolCoords.stampX() > -1000);
 
         if (enablePalette) {
-            renderPalette(guiGraphics,
-                    (effectiveTool == Tool.COLOR_MARKER) ? getColorMarkerStack() : colorPencilStack,
-                    effectiveTool);
+            renderPalette(guiGraphics, getColorStack(effectiveTool), effectiveTool);
         }
 
         if ((hasPencil && isPencilActive) || (hasColorPencil && isColorPencilActive)) {
@@ -1040,11 +1321,15 @@ public class SketchbookScreen extends Screen {
             rgb = net.minecraft.world.item.DyeColor.byId(colorId).getTextureDiffuseColor();
         }
 
+        int activeId = ToolWear.getActiveColorId(colorStack);
+        if (activeId >= 0 && this.paintLevel[paintSlot(tool)][activeId] <= 0) {
+            rgb = 0x777777; // краска закончилась
+        }
+
         float r = ((rgb >> 16) & 0xFF) / 255.0f;
         float g = ((rgb >> 8) & 0xFF) / 255.0f;
         float b = (rgb & 0xFF) / 255.0f;
 
-        int activeId = ToolWear.getActiveColorId(colorStack);
         if (activeId >= 0 && this.paintLevel[paintSlot(tool)][activeId] <= 0) {
             rgb = 0x777777; // краска закончилась
         }
@@ -1423,6 +1708,7 @@ public class SketchbookScreen extends Screen {
         int magGlassX = toolCoords.magGlassX();
         int compassX = toolCoords.compassX();
         int peekY = toolCoords.peekY();
+        int stampX = toolCoords.stampX();
 
         int btnFileWidth = 8;
         int btnFileHeight = 8;
@@ -1599,6 +1885,9 @@ public class SketchbookScreen extends Screen {
             if (hasCompass && mouseX >= compassX && mouseX < compassX + scaledBtnWidth && mouseY >= peekY && mouseY < peekY + scaledBtnHeight) {
                 this.compassState = (this.compassState == CompassState.INACTIVE) ? CompassState.FOLDED : CompassState.INACTIVE; return true;
             }
+            if (stampX > -1000 && isOverStampButton(mouseX, mouseY, stampX)) {
+                this.activeTool = Tool.STAMP; return true;
+            }
 
             int activeToolX = switch (effectiveTool) {
                 case PENCIL -> pencilX;
@@ -1615,8 +1904,8 @@ public class SketchbookScreen extends Screen {
             }
 
             // Клик по круговой палитре инструмента
-            if (effectiveTool == Tool.COLOR_PENCIL || effectiveTool == Tool.COLOR_MARKER) {
-                ItemStack activeColorStack = (effectiveTool == Tool.COLOR_MARKER) ? getColorMarkerStack() : getColorPencilStack();
+            if (isPaletteTool(effectiveTool)) {
+                ItemStack activeColorStack = getColorStack(effectiveTool);
                 if (!activeColorStack.isEmpty()) {
                     java.util.List<Integer> colors = activeColorStack.getOrDefault(ModDataComponents.STORED_COLORS.get(), new java.util.ArrayList<>());
                     if (!colors.isEmpty()) {
@@ -1631,7 +1920,7 @@ public class SketchbookScreen extends Screen {
                                     int colorIndex = colors.indexOf(swatch.colorId());
                                     activeColorStack.set(ModDataComponents.ACTIVE_COLOR_INDEX.get(), colorIndex);
                                     net.neoforged.neoforge.network.PacketDistributor.sendToServer(
-                                            new net.avizvul.esquissemod.network.ChangeColorPayload(colorIndex, effectiveTool == Tool.COLOR_MARKER)
+                                            new net.avizvul.esquissemod.network.ChangeColorPayload(colorIndex, paintSlot(effectiveTool))
                                     );
                                     if (this.minecraft != null && this.minecraft.player != null) {
                                         this.minecraft.player.playSound(net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK.value(), 1.0f, 1.0f);
@@ -1673,6 +1962,11 @@ public class SketchbookScreen extends Screen {
                     if (dist > 192.0) dist = 192.0;
                     this.compassRadius = dist;
                     this.compassState = CompassState.LOCKED;
+                }
+
+                if (this.activeTool == Tool.STAMP) {
+                    stampAt(lMouseX, lMouseY);
+                    return true;
                 }
 
             double[] magnetMouse = applyRulerMagnet(mouseX, mouseY);
@@ -1867,6 +2161,12 @@ public class SketchbookScreen extends Screen {
         boolean hasMarkerColors = hasTool(ModItems.COLOR_MARKER.get()) && !getColorMarkerStack().getOrDefault(ModDataComponents.STORED_COLORS.get(), new java.util.ArrayList<>()).isEmpty();
 
         if (net.minecraft.client.gui.screens.Screen.hasAltDown()) {
+            if (this.activeTool == Tool.STAMP) {
+                int step = Screen.hasShiftDown() ? 6 : 1; // Alt+Shift = 90°
+                if (scrollY > 0) this.stampRotation = Math.floorMod(this.stampRotation + step, 24);
+                else if (scrollY < 0) this.stampRotation = Math.floorMod(this.stampRotation - step, 24);
+                return true;
+            }
             if (this.activeTool == Tool.COLOR_MARKER && hasTool(ModItems.COLOR_MARKER.get())) {
                 int r = getMarkerRotation();
                 if (scrollY > 0) r = (r + 1) % 12;
@@ -1890,6 +2190,11 @@ public class SketchbookScreen extends Screen {
             }
         }
         else {
+            if (this.activeTool == Tool.STAMP) {
+                int count = getStamps().size();
+                if (count > 0) this.stampIndex = Math.floorMod(this.stampIndex + (scrollY > 0 ? -1 : 1), count);
+                return true;
+            }
             int s = getBrushSize();
             if (scrollY > 0) s = Math.min(3, s + 1);
             else if (scrollY < 0) s = Math.max(1, s - 1);
@@ -1978,6 +2283,7 @@ public class SketchbookScreen extends Screen {
             }
             return true;
         }
+        if (keyCode == GLFW.GLFW_KEY_P && hasStampTool()) { this.activeTool = Tool.STAMP; return true; }
 
         // Если никакой хоткей не сработал — вызываем базовый Screen (чтобы ESC закрывал GUI скетчбука)
         return super.keyPressed(keyCode, scanCode, modifiers);

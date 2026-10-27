@@ -19,6 +19,9 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.ItemContainerContents;
 import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
+import net.minecraft.ChatFormatting;
+import net.minecraft.network.chat.Component;
+import net.avizvul.esquissemod.item.custom.StampItem;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -67,7 +70,8 @@ public class SketchbookPayloadHandler {
         context.enqueueWork(() -> {
             Player player = context.player();
             if (player.getAbilities().instabuild) return;
-            Item target = payload.isMarker() ? ModItems.COLOR_MARKER.get() : ModItems.COLOR_PENCIL.get();
+            Item target = paintToolItem(payload.toolId());
+            if (target == null) return;
             modifyTool(player, target, stack -> ToolWear.consumePaint(stack, payload.units()));
         });
     }
@@ -152,6 +156,7 @@ public class SketchbookPayloadHandler {
                     } else {
                         tornPage = new ItemStack(ModItems.SKETCHED_PAGE.get());
                         tornPage.set(ModDataComponents.PAGE_DATA.get(), tornData);
+                        tornPage.set(ModDataComponents.PAGE_AUTHOR.get(), player.getGameProfile().getName());
                     }
 
                     if (!player.getInventory().add(tornPage)) {
@@ -175,7 +180,8 @@ public class SketchbookPayloadHandler {
     public void handleChangeColor(final ChangeColorPayload payload, final IPayloadContext context) {
         context.enqueueWork(() -> {
             Player player = context.player();
-            Item targetItem = payload.isMarker() ? ModItems.COLOR_MARKER.get() : ModItems.COLOR_PENCIL.get();
+            Item targetItem = paintToolItem(payload.toolId());
+            if (targetItem == null) return;
 
             for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
                 ItemStack stack = player.getInventory().getItem(i);
@@ -250,6 +256,52 @@ public class SketchbookPayloadHandler {
         });
     }
 
+    public void handleSealStamp(final SealStampPayload payload, final IPayloadContext context) {
+        context.enqueueWork(() -> {
+            Player player = context.player();
+            ItemStack stack = payload.offHand() ? player.getOffhandItem() : player.getMainHandItem();
+            if (!(stack.getItem() instanceof StampItem stamp)) return;
+            if (StampItem.isSealed(stack)) return; // после запечатывания менять нельзя
+
+            int size = stamp.getSize();
+            if (payload.rows().size() != size) return;
+
+            int mask = size >= 32 ? -1 : (1 << size) - 1;
+            List<Integer> clean = new ArrayList<>(size);
+            boolean any = false;
+            for (int row : payload.rows()) {
+                int v = row & mask;
+                if (v != 0) any = true;
+                clean.add(v);
+            }
+            if (!any) return; // пустой штамп запечатать нельзя
+
+            stack.set(ModDataComponents.STAMP_BITS.get(), clean);
+
+            String title = payload.name().replace("§", "").trim();
+            if (title.length() > 32) title = title.substring(0, 32);
+            if (!title.isEmpty()) {
+                stack.set(DataComponents.CUSTOM_NAME,
+                        Component.literal("\"" + title + "\"").withStyle(ChatFormatting.ITALIC));
+            }
+
+            player.level().playSound(null, player.blockPosition(),
+                    SoundEvents.INK_SAC_USE, SoundSource.PLAYERS, 1.0f, 1.0f);
+        });
+    }
+
+    /** Переносит автора и название оригинала на копию. */
+    private static void copyPageMeta(ItemStack from, ItemStack to) {
+        String author = from.get(ModDataComponents.PAGE_AUTHOR.get());
+        if (author != null) to.set(ModDataComponents.PAGE_AUTHOR.get(), author);
+
+        if (from.getOrDefault(ModDataComponents.PAGE_SIGNED.get(), false)) {
+            to.set(ModDataComponents.PAGE_SIGNED.get(), true);
+            Component name = from.get(DataComponents.CUSTOM_NAME);
+            if (name != null) to.set(DataComponents.CUSTOM_NAME, name);
+        }
+    }
+
     public void handlePrinterAction(final PrinterActionPayload payload, final IPayloadContext context) {
         context.enqueueWork(() -> {
             Player player = context.player();
@@ -296,10 +348,47 @@ public class SketchbookPayloadHandler {
                     paper.shrink(1);
                     ItemStack printedPage = new ItemStack(ModItems.SKETCHED_PAGE.get());
                     printedPage.set(ModDataComponents.PAGE_DATA.get(), sketchData);
+                    copyPageMeta(sourcePage, printedPage);
+                    printedPage.set(ModDataComponents.PAGE_COPIED.get(), true);
                     inv.insertItem(2, printedPage, false);
-                    player.level().playSound(null, player.blockPosition(), SoundEvents.BOOK_PAGE_TURN, SoundSource.BLOCKS, 1.0f, 1.0f);
                 }
             }
         });
     }
+
+    public void handleSignPage(final SignPagePayload payload, final IPayloadContext context) {
+        context.enqueueWork(() -> {
+            Player player = context.player();
+            ItemStack stack = payload.offHand() ? player.getOffhandItem() : player.getMainHandItem();
+            if (!stack.is(ModItems.SKETCHED_PAGE.get())) return;
+            if (stack.getOrDefault(ModDataComponents.PAGE_SIGNED.get(), false)) return;
+
+            // Сервер не доверяет клиенту: чистим форматирующие коды и ограничиваем длину
+            String title = payload.title().replace("§", "").trim();
+            if (title.isEmpty()) return;
+            if (title.length() > 32) title = title.substring(0, 32);
+
+            stack.set(DataComponents.CUSTOM_NAME,
+                    Component.literal("\"" + title + "\"").withStyle(ChatFormatting.ITALIC));
+            stack.set(ModDataComponents.PAGE_SIGNED.get(), true);
+
+            // Автор обычно записан при отрыве; если нет (старая страница), автором становится подписавший
+            if (!stack.has(ModDataComponents.PAGE_AUTHOR.get())) {
+                stack.set(ModDataComponents.PAGE_AUTHOR.get(), player.getGameProfile().getName());
+            }
+
+            player.level().playSound(null, player.blockPosition(),
+                    SoundEvents.INK_SAC_USE, SoundSource.PLAYERS, 1.0f, 1.0f);
+        });
+    }
+
+    private static Item paintToolItem(int toolId) {
+        return switch (toolId) {
+            case 0 -> ModItems.COLOR_PENCIL.get();
+            case 1 -> ModItems.COLOR_MARKER.get();
+            case 2 -> ModItems.STAMP_PAD.get();
+            default -> null;
+        };
+    }
+
 }

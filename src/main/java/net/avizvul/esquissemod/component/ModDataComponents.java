@@ -127,6 +127,40 @@ public class ModDataComponents {
                             .build()
             );
 
+    // --- Подпись и авторство ---
+    public static final Supplier<DataComponentType<String>> PAGE_AUTHOR =
+            DATA_COMPONENT_TYPES.register("page_author", () ->
+                    DataComponentType.<String>builder()
+                            .persistent(Codec.STRING)
+                            .networkSynchronized(ByteBufCodecs.STRING_UTF8)
+                            .build()
+            );
+
+    public static final Supplier<DataComponentType<Boolean>> PAGE_SIGNED =
+            DATA_COMPONENT_TYPES.register("page_signed", () ->
+                    DataComponentType.<Boolean>builder()
+                            .persistent(Codec.BOOL)
+                            .networkSynchronized(ByteBufCodecs.BOOL)
+                            .build()
+            );
+
+    public static final Supplier<DataComponentType<Boolean>> PAGE_COPIED =
+            DATA_COMPONENT_TYPES.register("page_copied", () ->
+                    DataComponentType.<Boolean>builder()
+                            .persistent(Codec.BOOL)
+                            .networkSynchronized(ByteBufCodecs.BOOL)
+                            .build()
+            );
+
+    // Маска штампа: строка y = int, бит x = «выступает» (печатает). Наличие компонента = штамп запечатан
+    public static final Supplier<DataComponentType<List<Integer>>> STAMP_BITS =
+            DATA_COMPONENT_TYPES.register("stamp_bits", () ->
+                    DataComponentType.<List<Integer>>builder()
+                            .persistent(Codec.INT.listOf())
+                            .networkSynchronized(ByteBufCodecs.collection(java.util.ArrayList::new, ByteBufCodecs.INT))
+                            .build()
+            );
+
     public static void register(IEventBus eventBus) {
         DATA_COMPONENT_TYPES.register(eventBus);
     }

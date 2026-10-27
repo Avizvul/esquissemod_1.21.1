@@ -63,7 +63,7 @@ public class SketchExporter {
             image.writeToFile(outputFile);
             if (Minecraft.getInstance().player != null) {
                 Minecraft.getInstance().player.sendSystemMessage(
-                        net.minecraft.network.chat.Component.literal("§aРисунок сохранен в screenshots/" + outputFile.getName())
+                        net.minecraft.network.chat.Component.translatable("message.esquissemod.sketch_saved", outputFile.getName())
                 );
             }
         } catch (IOException e) {

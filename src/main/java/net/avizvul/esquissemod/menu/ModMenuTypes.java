@@ -20,6 +20,9 @@ public class ModMenuTypes {
             () -> IMenuTypeExtension.create((containerId, playerInventory, buf) ->
                     new PrinterMenu(containerId, playerInventory, new ItemStackHandler(8), buf.readBlockPos())));
 
+    public static final Supplier<MenuType<AlbumMenu>> ALBUM_MENU = MENUS.register("album_menu",
+            () -> new MenuType<>(AlbumMenu::new, net.minecraft.world.flag.FeatureFlags.DEFAULT_FLAGS));
+
     public static void register(IEventBus eventBus) {
         MENUS.register(eventBus);
     }

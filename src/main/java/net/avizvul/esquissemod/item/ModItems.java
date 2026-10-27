@@ -19,6 +19,9 @@ public class ModItems {
                     // --- НОВОЕ: Привязываем 16 пустых страниц к скетчбуку по умолчанию ---
                     .component(ModDataComponents.SKETCHBOOK_PAGES.get(), createBlankPages(16))));
 
+    public static final DeferredItem<Item> ALBUM = ITEMS.register("album",
+            () -> new AlbumItem(new Item.Properties().stacksTo(1)));
+
     // Предмет изрисованной страницы (использует кастомный класс, который мы напишем ниже)
     public static final DeferredItem<Item> SKETCHED_PAGE = ITEMS.register("sketched_page",
             () -> new SketchedPageItem(new Item.Properties().stacksTo(1)));
@@ -124,6 +127,18 @@ public class ModItems {
 
     public static final DeferredItem<Item> MAGNIFYING_GLASS = ITEMS.register("magnifying_glass",
             () -> new Item(new Item.Properties().stacksTo(1)));
+
+    public static final DeferredItem<Item> STAMP_SMALL = ITEMS.register("stamp_small",
+            () -> new StampItem(new Item.Properties().stacksTo(1), 16));
+
+    public static final DeferredItem<Item> STAMP_LARGE = ITEMS.register("stamp_large",
+            () -> new StampItem(new Item.Properties().stacksTo(1), 32));
+
+    public static final DeferredItem<Item> STAMP_PAD = ITEMS.register("stamp_pad",
+            () -> new StampPadItem(new Item.Properties()
+                    .stacksTo(1)
+                    .component(ModDataComponents.STORED_COLORS.get(), new java.util.ArrayList<>())
+                    .component(ModDataComponents.ACTIVE_COLOR_INDEX.get(), 0)));
 
     public static final DeferredItem<Item> PRINTER = ITEMS.register("printer_block",
             () -> new net.minecraft.world.item.BlockItem(

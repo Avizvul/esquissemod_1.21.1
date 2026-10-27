@@ -1,0 +1,7 @@
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "esquissemod:item/stamp_pad",
+    "layer1": "esquissemod:item/stamp_pad_ink"
+  }
+}

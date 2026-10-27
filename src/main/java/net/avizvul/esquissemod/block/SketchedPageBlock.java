@@ -113,6 +113,7 @@ public class SketchedPageBlock extends Block implements EntityBlock {
             if (blockEntity instanceof SketchedPageBlockEntity pageEntity) {
                 ItemStack drop = new ItemStack(ModItems.SKETCHED_PAGE.get());
                 drop.set(ModDataComponents.PAGE_DATA.get(), pageEntity.getSketchData());
+                pageEntity.writeMetaTo(drop);
                 net.minecraft.world.Containers.dropItemStack(level, pos.getX(), pos.getY(), pos.getZ(), drop);
             }
             super.onRemove(state, level, pos, newState, isMoving);

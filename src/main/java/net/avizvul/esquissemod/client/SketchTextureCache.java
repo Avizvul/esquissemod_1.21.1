@@ -23,6 +23,8 @@ public class SketchTextureCache {
 
     private static final int W = 126, H = 192;
     private static final int MAX_CACHE_SIZE = 100;
+    /** Во сколько раз текстура страницы с текстом больше холста (для чёткого текста). */
+    private static final int TEXT_SS = 2;
 
     private static final Map<Integer, ResourceLocation> CACHE = new LinkedHashMap<>(MAX_CACHE_SIZE + 1, 0.75f, true) {
         @Override
@@ -63,18 +65,27 @@ public class SketchTextureCache {
         ResourceLocation cached = CACHE.get(hash);
         if (cached != null) return cached;
 
-        NativeImage image = new NativeImage(W, H, true);
+        List<TextElement> texts = data.getTextElements();
+        boolean hasText = texts != null && !texts.isEmpty();
+        int k = hasText ? TEXT_SS : 1; // страницы без текста остаются 126×192
+
+        NativeImage image = new NativeImage(W * k, H * k, true);
         int[][] pixels = data.toArray(W, H);
         for (int x = 0; x < W; x++) {
             for (int y = 0; y < H; y++) {
                 int argb = pixels[x][y];
-                if (argb != 0) image.setPixelRGBA(x, y, argbToAbgr(argb));
+                if (argb == 0) continue;
+                int abgr = argbToAbgr(argb);
+                for (int dx = 0; dx < k; dx++) {
+                    for (int dy = 0; dy < k; dy++) {
+                        image.setPixelRGBA(x * k + dx, y * k + dy, abgr);
+                    }
+                }
             }
         }
 
-        List<TextElement> texts = data.getTextElements();
-        if (texts != null && !texts.isEmpty()) {
-            rasterizeText(image, texts);
+        if (hasText) {
+            rasterizeText(image, texts, k);
         }
 
         ResourceLocation id = ResourceLocation.fromNamespaceAndPath("esquissemod", "sketch_cache_" + Math.abs(hash));
@@ -83,22 +94,24 @@ public class SketchTextureCache {
         return id;
     }
 
-    private static void rasterizeText(NativeImage baseImage, List<TextElement> textElements) {
+    private static void rasterizeText(NativeImage baseImage, List<TextElement> textElements, int k) {
         Minecraft mc = Minecraft.getInstance();
         Font font = mc.font;
+        int tw = W * k, th = H * k;
 
         TextureTarget target = null;
         ByteBufferBuilder bbb = null;
         NativeImage textImage = null;
         try {
-            // Размер FBO == размер страницы, поэтому всё, что вылезает за края,
+            // Размер буфера == размер страницы (в k раз крупнее), поэтому всё, что вылезает за края,
             // аппаратно отсекается ПО ПИКСЕЛЯМ (а не по буквам).
-            target = new TextureTarget(W, H, true, Minecraft.ON_OSX);
+            target = new TextureTarget(tw, th, true, Minecraft.ON_OSX);
             target.setClearColor(0f, 0f, 0f, 0f);
             target.clear(Minecraft.ON_OSX);
             target.bindWrite(true);
 
             RenderSystem.backupProjectionMatrix();
+            // Координаты остаются в пикселях холста, поэтому текст сам рисуется в k раз чётче
             RenderSystem.setProjectionMatrix(
                     new Matrix4f().setOrtho(0f, W, H, 0f, -1000f, 1000f),
                     VertexSorting.ORTHOGRAPHIC_Z);
@@ -130,13 +143,13 @@ public class SketchTextureCache {
 
             RenderSystem.restoreProjectionMatrix();
 
-            textImage = new NativeImage(W, H, false);
+            textImage = new NativeImage(tw, th, false);
             RenderSystem.bindTexture(target.getColorTextureId());
             textImage.downloadTexture(0, false);
 
-            for (int x = 0; x < W; x++) {
-                for (int y = 0; y < H; y++) {
-                    int textAbgr = textImage.getPixelRGBA(x, H - 1 - y); // FBO перевёрнут по Y
+            for (int x = 0; x < tw; x++) {
+                for (int y = 0; y < th; y++) {
+                    int textAbgr = textImage.getPixelRGBA(x, th - 1 - y); // буфер перевёрнут по Y
                     if (((textAbgr >> 24) & 0xFF) == 0) continue;
                     int bg = abgrToArgb(baseImage.getPixelRGBA(x, y));
                     int blended = ColorUtils.blendColors(bg, abgrToArgb(textAbgr));

@@ -291,7 +291,7 @@ public class SketchbookScreen extends Screen {
         int leftX = (this.width / 2) - 100 - scaledBtnWidth;
         if (hasRuler) { rulerX = leftX; leftX -= (scaledBtnWidth + 5); }
         if (hasMagGlass) { magGlassX = leftX; leftX -= (scaledBtnWidth + 5); }
-        if (hasCompass) { compassX = leftX; }
+        if (hasCompass) { compassX = leftX; leftX -= (scaledBtnWidth + 5); }
         if (hasStampTool()) { stampX = leftX; }
 
         if (hasPencil) { pencilX = currentX; currentX += scaledBtnWidth + 5; }
@@ -717,7 +717,8 @@ public class SketchbookScreen extends Screen {
             }
         }
         this.activeTool = (wanted != null) ? wanted : Tool.PENCIL;
-        this.previousDrawingTool = (savedPreviousDrawingTool != Tool.TEXT && isToolAvailable(savedPreviousDrawingTool))
+        this.previousDrawingTool = ((savedPreviousDrawingTool == Tool.PENCIL || savedPreviousDrawingTool == Tool.COLOR_PENCIL)
+                && isToolAvailable(savedPreviousDrawingTool))
                 ? savedPreviousDrawingTool : Tool.PENCIL;
     }
 
@@ -1565,8 +1566,19 @@ public class SketchbookScreen extends Screen {
 
                 if (x >= 0 && x < this.canvasWidth * this.resolutionMultiplier && y >= 0 && y < this.canvasHeight * this.resolutionMultiplier) {
                     if (this.activeTool == Tool.ERASER) {
-                        if (pixels[x][y] != 0) {
-                            pixels[x][y] = 0;
+                        int current = pixels[x][y];
+                        if (current != 0) {
+                            if (currentToolHardness >= 3) {
+                                pixels[x][y] = 0; // жёсткий: стирает полностью
+                            } else {
+                                if (this.strokePixels == null) this.strokePixels = new boolean[this.canvasWidth * this.resolutionMultiplier][this.canvasHeight * this.resolutionMultiplier];
+                                if (this.strokePixels[x][y]) continue; // за один проход пиксель стирается один раз
+
+                                int step = (currentToolHardness == 1) ? 85 : 170; // 33% / 66% непрозрачности
+                                int a = ((current >> 24) & 0xFF) - step;
+                                pixels[x][y] = (a <= 5) ? 0 : (a << 24) | (current & 0x00FFFFFF);
+                                this.strokePixels[x][y] = true;
+                            }
                             this.isCanvasDirty = true;
                             this.eraserPixelsUsed++;
                         }
@@ -1698,12 +1710,12 @@ public class SketchbookScreen extends Screen {
 
         int scaledBtnWidth = toolCoords.scaledBtnWidth();
         int scaledBtnHeight = toolCoords.scaledBtnHeight();
-        int pencilX = toolCoords.pencilX();
-        int colorPencilX = toolCoords.colorPencilX();
-        int colorMarkerX = toolCoords.colorMarkerX();
-        int eraserX = toolCoords.eraserX();
-        int smudgeX = toolCoords.smudgeX();
-        int kneadedX = toolCoords.kneadedX();
+        int pencilY = (effectiveTool == Tool.PENCIL) ? peekY : baseY;
+        int colorPencilY = (effectiveTool == Tool.COLOR_PENCIL) ? peekY : baseY;
+        int colorMarkerY = (effectiveTool == Tool.COLOR_MARKER) ? peekY : baseY;
+        int eraserY = (effectiveTool == Tool.ERASER) ? peekY : baseY;
+        int smudgeY = (effectiveTool == Tool.SMUDGE) ? peekY : baseY;
+        int kneadedY = (effectiveTool == Tool.KNEADED_ERASER) ? peekY : baseY;
         int rulerX = toolCoords.rulerX();
         int magGlassX = toolCoords.magGlassX();
         int compassX = toolCoords.compassX();
@@ -1715,13 +1727,6 @@ public class SketchbookScreen extends Screen {
         int btnX = renderX;
         int btnY = renderY + ((this.fileHeight - btnFileHeight) / 2) * this.scale;
         int baseY = this.height - (scaledBtnHeight / 2);
-
-        int pencilY = (this.activeTool == Tool.PENCIL) ? peekY : baseY;
-        int colorPencilY = (this.activeTool == Tool.COLOR_PENCIL) ? peekY : baseY;
-        int colorMarkerY = (this.activeTool == Tool.COLOR_MARKER) ? peekY : baseY;
-        int eraserY = (this.activeTool == Tool.ERASER) ? peekY : baseY;
-        int smudgeY = (this.activeTool == Tool.SMUDGE) ? peekY : baseY;
-        int kneadedY = (this.activeTool == Tool.KNEADED_ERASER) ? peekY : baseY;
 
         TabCoords coords = getTabCoords(renderX, renderY, drawWidth);
         int scaledTabWidth = this.tabWidth * this.tabScale;
@@ -1794,6 +1799,7 @@ public class SketchbookScreen extends Screen {
 
             if (mouseX >= textSymbolX - 2 && mouseX < textSymbolX + 18 && mouseY >= textSymbolY - 2 && mouseY < textSymbolY + 12) {
                 if (this.activeTool == Tool.TEXT) {
+                    textEditor.setTextModeActive(false); // выход из режима отменяет незавершённый ввод
                     this.activeTool = this.previousDrawingTool;
                 } else {
                     this.previousDrawingTool = this.activeTool;
@@ -2151,7 +2157,6 @@ public class SketchbookScreen extends Screen {
         return super.mouseReleased(mouseX, mouseY, button);
     }
 
-
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
         ItemStack colorPencilStack = getColorPencilStack();
@@ -2178,16 +2183,17 @@ public class SketchbookScreen extends Screen {
         else if (net.minecraft.client.gui.screens.Screen.hasShiftDown()) {
             if ((this.activeTool == Tool.PENCIL && hasTool(ModItems.PENCIL.get())) ||
                     (this.activeTool == Tool.COLOR_PENCIL && hasColors) ||
+                    (this.activeTool == Tool.ERASER && hasTool(ModItems.ERASER.get())) ||
                     (this.activeTool == Tool.SMUDGE && hasTool(ModItems.SMUDGE.get())) ||
                     (this.activeTool == Tool.KNEADED_ERASER && hasTool(ModItems.KNEADED_ERASER.get())) ||
                     (this.activeTool == Tool.COLOR_MARKER && hasMarkerColors)) {
-
-                int h = getHardness();
-                if (scrollY > 0) h = Math.min(3, h + 1);
-                else if (scrollY < 0) h = Math.max(1, h - 1);
-                setToolSettings(getBrushSize(), h, getMarkerRotation());
-                return true;
+                        int h = getHardness();
+                        if (scrollY > 0) h = Math.min(3, h + 1);
+                        else if (scrollY < 0) h = Math.max(1, h - 1);
+                        setToolSettings(getBrushSize(), h, getMarkerRotation());
+                        return true;
             }
+
         }
         else {
             if (this.activeTool == Tool.STAMP) {
@@ -2235,14 +2241,16 @@ public class SketchbookScreen extends Screen {
         if (keyCode == GLFW.GLFW_KEY_W && hasKneadedEraser) { this.activeTool = Tool.KNEADED_ERASER; return true; }
         if (keyCode == GLFW.GLFW_KEY_V && hasColorMarker) { this.activeTool = Tool.COLOR_MARKER; return true; }
 
-        if (keyCode == GLFW.GLFW_KEY_T && (hasPencil || hasColorPencil)) {
+        if (keyCode == GLFW.GLFW_KEY_T) {
             if (this.activeTool == Tool.TEXT) {
                 this.activeTool = this.previousDrawingTool;
-            } else {
+                return true;
+            }
+            if ((this.activeTool == Tool.PENCIL && hasPencil) || (this.activeTool == Tool.COLOR_PENCIL && hasColorPencil)) {
                 this.previousDrawingTool = this.activeTool;
                 this.activeTool = Tool.TEXT;
+                return true;
             }
-            return true;
         }
 
         if (keyCode == GLFW.GLFW_KEY_R && hasRuler) {
@@ -2311,63 +2319,6 @@ public class SketchbookScreen extends Screen {
     }
 
 //_________________________________________________________________________________
-
-    private int getCharIndexAtMouse(TextBoxState box, int screenX1, int screenY1, int screenX2, double mouseX, double mouseY) {
-        int renderY = (int) this.exactGuiTop;
-        double pCell = (double) this.scale / this.resolutionMultiplier;
-        float renderScale = (float) (box.fontScale * pCell);
-
-        if (box.isVertical) {
-            int screenY2 = renderY + (int) (box.y2 * pCell);
-            int maxW = Math.max(10, (int) ((screenY2 - screenY1 - 4) / renderScale));
-            java.util.List<TextBoxState.TextLine> lines = box.getWrappedLines(this.font, maxW);
-
-            double relativeX = (screenX2 - 2 - mouseX) / renderScale;
-            int lineIdx = (int) (relativeX / 9.0);
-            lineIdx = Math.max(0, Math.min(lines.size() - 1, lineIdx));
-
-            TextBoxState.TextLine targetLine = lines.get(lineIdx);
-            double relativeY = (mouseY - (screenY1 + 2)) / renderScale;
-            if (relativeY <= 0) return targetLine.startCharIndex;
-
-            int bestIndex = targetLine.startCharIndex;
-            double minDiff = Double.MAX_VALUE;
-            for (int i = targetLine.startCharIndex; i <= targetLine.endCharIndex; i++) {
-                String sub = box.getFormattedSubstring(targetLine.startCharIndex, i);
-                int widthSoFar = this.font.width(sub);
-                double diff = Math.abs(relativeY - widthSoFar);
-                if (diff < minDiff) {
-                    minDiff = diff;
-                    bestIndex = i;
-                }
-            }
-            return bestIndex;
-        } else {
-            int maxW = Math.max(10, (int) ((screenX2 - screenX1 - 4) / renderScale));
-            java.util.List<TextBoxState.TextLine> lines = box.getWrappedLines(this.font, maxW);
-
-            double relativeY = (mouseY - (screenY1 + 2)) / renderScale;
-            int lineIdx = (int) (relativeY / 9.0);
-            lineIdx = Math.max(0, Math.min(lines.size() - 1, lineIdx));
-
-            TextBoxState.TextLine targetLine = lines.get(lineIdx);
-            double relativeX = (mouseX - (screenX1 + 2)) / renderScale;
-            if (relativeX <= 0) return targetLine.startCharIndex;
-
-            int bestIndex = targetLine.startCharIndex;
-            double minDiff = Double.MAX_VALUE;
-            for (int i = targetLine.startCharIndex; i <= targetLine.endCharIndex; i++) {
-                String sub = box.getFormattedSubstring(targetLine.startCharIndex, i);
-                int widthSoFar = this.font.width(sub);
-                double diff = Math.abs(relativeX - widthSoFar);
-                if (diff < minDiff) {
-                    minDiff = diff;
-                    bestIndex = i;
-                }
-            }
-            return bestIndex;
-        }
-    }
 
     public static class StyledChar {
         public char ch;
@@ -2685,6 +2636,75 @@ public class SketchbookScreen extends Screen {
             return p;
         }
 
+        public static final int MAX_CHARS = 1000;
+
+        public String getSelectedText() {
+            if (!hasSelection()) return "";
+            StringBuilder sb = new StringBuilder();
+            for (int i = getSelectionMin(); i < getSelectionMax(); i++) sb.append(chars.get(i).ch);
+            return sb.toString();
+        }
+
+        public void selectAll() {
+            this.anchor = 0;
+            this.caret = chars.size();
+            this.hasPendingOverride = false;
+            updateText();
+        }
+
+        private static int charClass(char ch) {
+            if (ch == '\n') return 3;
+            if (Character.isLetterOrDigit(ch)) return 0;
+            if (Character.isWhitespace(ch)) return 1;
+            return 2;
+        }
+
+        /** Двойной клик: выделяет слово (или группу пробелов или знаков) под кареткой. */
+        public void selectWordAt(int pos) {
+            int len = chars.size();
+            if (len == 0) return;
+            int c = Math.max(0, Math.min(len - 1, pos));
+            int cls = charClass(chars.get(c).ch);
+            int s = c, e = c + 1;
+            while (s > 0 && charClass(chars.get(s - 1).ch) == cls) s--;
+            while (e < len && charClass(chars.get(e).ch) == cls) e++;
+            this.anchor = s;
+            this.caret = e;
+            this.hasPendingOverride = false;
+            updateText();
+        }
+
+        public void deleteWordBack() {
+            if (hasSelection()) { deleteSelection(); return; }
+            if (caret <= 0) return;
+            int to = findPreviousWordBoundary(caret);
+            chars.subList(to, caret).clear();
+            setCaret(to, false);
+        }
+
+        public void deleteWordForward() {
+            if (hasSelection()) { deleteSelection(); return; }
+            if (caret >= chars.size()) return;
+            int to = findNextWordBoundary(caret);
+            chars.subList(caret, to).clear();
+            setCaret(caret, false);
+        }
+
+        /** Безопасная вставка: убирает управляющие символы и §, режет по лимиту. Годится и для набора, и для буфера обмена. */
+        public void insertPasted(String raw) {
+            if (raw == null || raw.isEmpty()) return;
+            StringBuilder sb = new StringBuilder();
+            for (char ch : raw.toCharArray()) {
+                if (ch == '\r') continue;
+                if (ch == '\t') { sb.append("    "); continue; }
+                if (ch == '\n' || (ch >= 32 && ch != 127 && ch != '§')) sb.append(ch);
+            }
+            int selected = hasSelection() ? getSelectionMax() - getSelectionMin() : 0;
+            int room = MAX_CHARS - (chars.size() - selected);
+            if (room <= 0 || sb.length() == 0) return;
+            insertText(sb.length() > room ? sb.substring(0, room) : sb.toString());
+        }
+
         // --- ВЛОЖЕННЫЙ КЛАСС ДЛЯ СТРОК ---
         public static class TextLine {
             public int startCharIndex; // Включительно
@@ -2782,20 +2802,8 @@ public class SketchbookScreen extends Screen {
             };
         }
 
-        int rgb = 0x000000;
-        if (this.activeTool == Tool.COLOR_PENCIL || this.activeTool == Tool.COLOR_MARKER) {
-            net.minecraft.world.item.ItemStack activeStack = (this.activeTool == Tool.COLOR_MARKER) ? getColorMarkerStack() : getColorPencilStack();
-            if (!activeStack.isEmpty()) {
-                java.util.List<Integer> colors = activeStack.getOrDefault(ModDataComponents.STORED_COLORS.get(), new java.util.ArrayList<>());
-                if (!colors.isEmpty()) {
-                    int activeIndex = activeStack.getOrDefault(ModDataComponents.ACTIVE_COLOR_INDEX.get(), 0);
-                    int colorId = colors.get(Math.abs(activeIndex) % colors.size());
-                    rgb = net.minecraft.world.item.DyeColor.byId(colorId).getTextureDiffuseColor();
-                }
-            }
-        }
-
-        return (alpha << 24) | (rgb & 0xFFFFFF);
+        // Базовый цвет текста всегда чёрный. Другой цвет задаётся только панелью форматирования
+        return alpha << 24;
     }
 
     private void commitTextToCanvas() {
@@ -2827,10 +2835,8 @@ public class SketchbookScreen extends Screen {
         savedRotationAngle = this.rotationAngle;
         hasSavedState = true;
 
-        // Автоматическое запекание активного текста перед закрытием
-        if (textEditor.isTextModeActive()) {
-            commitTextToCanvas();
-        }
+        // Незавершённый ввод текста отменяется: рамка и текст в ней исчезают
+        textEditor.setTextModeActive(false);
 
         SketchData data = SketchData.fromArrayAndTexts(this.pixels, this.textElements);
 

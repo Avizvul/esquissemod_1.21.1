@@ -15,7 +15,7 @@ public class ClientModEvents {
 
     @SubscribeEvent
     public static void registerTooltipComponents(RegisterClientTooltipComponentFactoriesEvent event) {
-        // Говорим игре: "Когда встретишь SketchedPageTooltipData, используй ClientSketchedPageTooltip для отрисовки"
+        event.register(SketchedPageTooltipData.class, ClientSketchedPageTooltip::new);
         event.register(net.avizvul.esquissemod.client.tooltip.StampTooltipData.class,
                 net.avizvul.esquissemod.client.tooltip.ClientStampTooltip::new);
     }

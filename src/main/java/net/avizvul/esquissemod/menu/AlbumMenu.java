@@ -15,7 +15,26 @@ public class AlbumMenu extends AbstractContainerMenu {
     public static final int PAGES = 16;
 
     // Макет инвентаря игрока (должен совпадать с текстурой album_gui.png)
-    private static final int INV_X = 8, INV_Y = 142, HOTBAR_Y = 200;
+    // ===== Макет GUI (общий для меню и экрана) =====
+    public static final float BOOK_SCALE = 1.5f;   // во сколько раз увеличена книга
+
+    public static final int SRC_BOOK_W = 232, SRC_BOOK_H = 185;   // книга в текстуре
+    public static final int BOOK_W = Math.round(SRC_BOOK_W * BOOK_SCALE);
+    public static final int BOOK_H = Math.round(SRC_BOOK_H * BOOK_SCALE);
+
+    public static final int INV_PANEL_W = 176, INV_PANEL_H = 91;  // панель инвентаря 1:1
+    public static final int INV_GAP = 4;                          // зазор между книгой и панелью
+
+    public static final int GUI_W = Math.max(BOOK_W, INV_PANEL_W);
+    public static final int GUI_H = BOOK_H + INV_GAP + INV_PANEL_H;
+
+    public static final int INV_PANEL_X = (GUI_W - INV_PANEL_W) / 2;
+    public static final int INV_PANEL_Y = BOOK_H + INV_GAP;
+
+    // Смещения слотов внутри панели: (37-29, 196-187), хотбар на 254-187
+    public static final int INV_X = INV_PANEL_X + 8;
+    public static final int INV_Y = INV_PANEL_Y + 9;
+    public static final int HOTBAR_Y = INV_PANEL_Y + 67;
 
     private final SimpleContainer container;
     private final ItemStack albumStack;

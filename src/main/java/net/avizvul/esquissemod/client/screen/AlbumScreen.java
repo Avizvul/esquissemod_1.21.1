@@ -28,14 +28,28 @@ public class AlbumScreen extends AbstractContainerScreen<AlbumMenu> {
     private static final ResourceLocation TAB_BACK_TEX = ResourceLocation.fromNamespaceAndPath(EsquisseMod.MOD_ID, "textures/gui/button_page_b.png");
     private static final ResourceLocation TAB_FWD_TEX = ResourceLocation.fromNamespaceAndPath(EsquisseMod.MOD_ID, "textures/gui/button_page_f.png");
 
-    // ===== Макет (подгоняется под текстуру album_gui.png 176×224) =====
-    private static final int GUI_W = 176, GUI_H = 224;
-    private static final int PAGE_W = 63, PAGE_H = 96;
-    private static final int LEFT_PAGE_X = 24, RIGHT_PAGE_X = 89, PAGE_Y = 10;
-    private static final int TEXT_Y = PAGE_Y + PAGE_H + 3;   // начало подписи под рисунком
-    private static final int TEXT_MAX_W = 61;                // ширина области подписи
-    private static final float TEXT_SCALE = 0.75f;
-    private static final int LINE_H = 7;
+    // ===== Макет: всё считается от AlbumMenu.BOOK_SCALE =====
+    private static final float S = AlbumMenu.BOOK_SCALE;
+    private static int sc(int v) { return Math.round(v * S); }
+
+    private static final int BOOK_X = (AlbumMenu.GUI_W - AlbumMenu.BOOK_W) / 2;
+
+    // Области страниц (координаты внутри увеличенной книги)
+    private static final int LEFT_AREA_X = sc(4), LEFT_AREA_W = sc(108);
+    private static final int RIGHT_AREA_X = sc(119), RIGHT_AREA_W = sc(109);
+    private static final int AREA_Y = sc(5), AREA_H = sc(170);
+
+    // Рисунок: целый множитель от текстуры 126×192, поэтому пиксели остаются чёткими
+    private static final int DRAW_MUL = 1;
+    private static final int DRAW_W = 126 * DRAW_MUL, DRAW_H = 192 * DRAW_MUL;
+    private static final int DRAW_Y = AREA_Y + 4;
+    private static final boolean DRAW_PAPER = true;
+
+    // Подпись
+    private static final int TEXT_Y = DRAW_Y + DRAW_H + 4;
+    private static final int TEXT_MAX_W = LEFT_AREA_W - 8;
+    private static final float TEXT_SCALE = 1.0f;
+    private static final int LINE_H = 9;
     private static final int MAX_TITLE_LINES = 3;
     private static final int TEXT_COLOR = 0x404040;
 
@@ -54,8 +68,8 @@ public class AlbumScreen extends AbstractContainerScreen<AlbumMenu> {
 
     public AlbumScreen(AlbumMenu menu, Inventory playerInventory, Component title) {
         super(menu, playerInventory, title);
-        this.imageWidth = GUI_W;
-        this.imageHeight = GUI_H;
+        this.imageWidth = AlbumMenu.GUI_W;
+        this.imageHeight = AlbumMenu.GUI_H;
     }
 
     @Override
@@ -92,11 +106,17 @@ public class AlbumScreen extends AbstractContainerScreen<AlbumMenu> {
 
     @Override
     protected void renderBg(GuiGraphics g, float partialTick, int mouseX, int mouseY) {
-        g.blit(TEXTURE, this.leftPos, this.topPos, 0, 0, GUI_W, GUI_H, GUI_W, GUI_H);
+        // Книга: увеличенный фрагмент текстуры
+        g.blit(TEXTURE, this.leftPos + BOOK_X, this.topPos, AlbumMenu.BOOK_W, AlbumMenu.BOOK_H,
+                0.0f, 0.0f, AlbumMenu.SRC_BOOK_W, AlbumMenu.SRC_BOOK_H, 232, 278);
+        // Панель инвентаря: фрагмент 1:1
+        g.blit(TEXTURE, this.leftPos + AlbumMenu.INV_PANEL_X, this.topPos + AlbumMenu.INV_PANEL_Y,
+                AlbumMenu.INV_PANEL_W, AlbumMenu.INV_PANEL_H,
+                29.0f, 187.0f, AlbumMenu.INV_PANEL_W, AlbumMenu.INV_PANEL_H, 232, 278);
 
         RenderSystem.enableBlend();
-        drawPage(g, this.spread * 2, this.leftPos + LEFT_PAGE_X);
-        drawPage(g, this.spread * 2 + 1, this.leftPos + RIGHT_PAGE_X);
+        drawPage(g, this.spread * 2, LEFT_AREA_X, LEFT_AREA_W);
+        drawPage(g, this.spread * 2 + 1, RIGHT_AREA_X, RIGHT_AREA_W);
         RenderSystem.disableBlend();
 
         if (this.spread > 0) {
@@ -107,21 +127,26 @@ public class AlbumScreen extends AbstractContainerScreen<AlbumMenu> {
         }
     }
 
-    private void drawPage(GuiGraphics g, int slotIndex, int pageX) {
+    private void drawPage(GuiGraphics g, int slotIndex, int areaX, int areaW) {
         ItemStack stack = this.menu.getSlot(slotIndex).getItem();
         if (stack.isEmpty()) return;
 
-        int y = this.topPos + PAGE_Y;
-        g.blit(PAGE_TEX, pageX, y, PAGE_W, PAGE_H, 0.0f, 0.0f, PAGE_W, PAGE_H, PAGE_W, PAGE_H);
+        int centerX = this.leftPos + BOOK_X + areaX + areaW / 2;
+        int x = centerX - DRAW_W / 2;
+        int y = this.topPos + DRAW_Y;
+
+        if (DRAW_PAPER) {
+            g.blit(PAGE_TEX, x, y, DRAW_W, DRAW_H, 0.0f, 0.0f, 63, 96, 63, 96);
+        }
 
         SketchData data = stack.get(ModDataComponents.PAGE_DATA.get());
         if (data != null && !data.isEmpty()) {
-            ClientRenderUtils.renderCachedSketch(g, data, pageX, y, PAGE_W, PAGE_H);
+            ClientRenderUtils.renderCachedSketch(g, data, x, y, DRAW_W, DRAW_H);
         }
 
         // Название и автор показываются только у подписанных рисунков
         if (stack.getOrDefault(ModDataComponents.PAGE_SIGNED.get(), false)) {
-            drawCaption(g, stack, pageX + PAGE_W / 2, this.topPos + TEXT_Y);
+            drawCaption(g, stack, centerX, this.topPos + TEXT_Y);
         }
     }
 
@@ -170,9 +195,9 @@ public class AlbumScreen extends AbstractContainerScreen<AlbumMenu> {
 
     /** Индекс слота страницы под курсором или -1. */
     private int pageSlotAt(double mx, double my) {
-        int y = this.topPos + PAGE_Y;
-        if (inRect(mx, my, this.leftPos + LEFT_PAGE_X, y, PAGE_W, PAGE_H)) return this.spread * 2;
-        if (inRect(mx, my, this.leftPos + RIGHT_PAGE_X, y, PAGE_W, PAGE_H)) return this.spread * 2 + 1;
+        int y = this.topPos + AREA_Y;
+        if (inRect(mx, my, this.leftPos + BOOK_X + LEFT_AREA_X, y, LEFT_AREA_W, AREA_H)) return this.spread * 2;
+        if (inRect(mx, my, this.leftPos + BOOK_X + RIGHT_AREA_X, y, RIGHT_AREA_W, AREA_H)) return this.spread * 2 + 1;
         return -1;
     }
 

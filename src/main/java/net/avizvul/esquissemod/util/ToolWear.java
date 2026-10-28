@@ -19,7 +19,7 @@ public final class ToolWear {
     public static final int PAINT_STAGES = 4;
 
     /** Изнашивать инструменты в творческом режиме (true удобно для отладки, для релиза поставьте false). */
-    public static final boolean WEAR_IN_CREATIVE = true;
+    public static final boolean WEAR_IN_CREATIVE = false;
 
     public static int pixelsPerDamage(net.minecraft.world.item.Item item) {
         if (item == net.avizvul.esquissemod.item.ModItems.KNEADED_ERASER.get()) return KNEADED_PIXELS_PER_DAMAGE;

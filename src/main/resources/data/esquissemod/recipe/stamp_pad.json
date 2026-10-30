@@ -1,0 +1,21 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "tool",
+  "key": {
+    "I": {
+      "item": "minecraft:iron_ingot"
+    },
+    "W": {
+      "tag": "minecraft:wool"
+    }
+  },
+  "pattern": [
+    " W ",
+    " I ",
+    "   "
+  ],
+  "result": {
+    "count": 1,
+    "id": "esquissemod:stamp_pad"
+  }
+}

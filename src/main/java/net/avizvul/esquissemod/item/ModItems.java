@@ -49,7 +49,8 @@ public class ModItems {
 
     public static final DeferredItem<Item> ERASER = ITEMS.register("eraser",
             () -> new DrawingToolItem(new Item.Properties().durability(256)
-                    .component(ModDataComponents.BRUSH_SIZE.get(), 1)) {
+                    .component(ModDataComponents.BRUSH_SIZE.get(), 1)
+                    .component(ModDataComponents.BRUSH_HARDNESS.get(), 3)) {
                 @Override
                 public net.minecraft.resources.ResourceLocation getGuiTexture() {
                     return net.minecraft.resources.ResourceLocation.fromNamespaceAndPath(net.avizvul.esquissemod.EsquisseMod.MOD_ID, "textures/gui/button_eraser.png");

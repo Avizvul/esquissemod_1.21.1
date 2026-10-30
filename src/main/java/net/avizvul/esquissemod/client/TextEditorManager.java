@@ -4,6 +4,8 @@ import net.avizvul.esquissemod.client.screen.SketchbookScreen.TextBoxState;
 import net.avizvul.esquissemod.component.TextElement;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.Screen;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.List;
@@ -17,6 +19,10 @@ public class TextEditorManager {
     private boolean isTextBoxResizing = false;
     private boolean isTextSelectingWithMouse = false;
     private double textBoxDragStartX, textBoxDragStartY;
+    private List<TextBoxState.TextLine> layoutLines = List.of(); // раскладка с последнего кадра
+    private long lastClickTime = 0;
+    private int clickCount = 0;
+    private double lastClickX, lastClickY;
 
     public boolean isTextModeActive() {
         return this.isTextModeActive;
@@ -63,6 +69,7 @@ public class TextEditorManager {
         int boxLineLength = isVerticalText ? (screenY2 - screenY1) : (screenX2 - screenX1);
         int maxW = Math.max(10, (int) ((boxLineLength - 4) / renderScale));
         List<TextBoxState.TextLine> lines = box.getWrappedLines(font, maxW);
+        this.layoutLines = lines;
 
         if (lines.isEmpty()) return;
 
@@ -310,9 +317,25 @@ public class TextEditorManager {
                 this.textBoxDragStartY = mouseY - screenY1;
                 return true;
             }
-            // Внутри рамки текста
+            // Внутри рамки текста: каретка, выделение, двойной и тройной клик
             if (mouseX >= screenX1 && mouseX <= screenX2 && mouseY >= screenY1 && mouseY <= screenY2) {
-                this.isTextSelectingWithMouse = true;
+                long now = System.currentTimeMillis();
+                boolean multi = (now - this.lastClickTime) < 400
+                        && Math.abs(mouseX - this.lastClickX) < 4 && Math.abs(mouseY - this.lastClickY) < 4;
+                this.clickCount = multi ? this.clickCount + 1 : 1;
+                this.lastClickTime = now;
+                this.lastClickX = mouseX;
+                this.lastClickY = mouseY;
+
+                int idx = charIndexAt(box, Minecraft.getInstance().font, mouseX, mouseY, pCell, canvasScreenLeft, renderY);
+                if (this.clickCount >= 3) {
+                    box.selectAll();
+                } else if (this.clickCount == 2) {
+                    box.selectWordAt(idx);
+                } else {
+                    box.setCaret(idx, Screen.hasShiftDown());
+                }
+                this.isTextSelectingWithMouse = (this.clickCount == 1);
                 return true;
             }
         }
@@ -344,6 +367,12 @@ public class TextEditorManager {
             return true;
         }
 
+        if (this.isTextSelectingWithMouse) {
+            int idx = charIndexAt(this.activeTextBox, Minecraft.getInstance().font, mouseX, mouseY, pCell, canvasScreenLeft, renderY);
+            this.activeTextBox.setCaret(idx, true);
+            return true;
+        }
+
         return false;
     }
 
@@ -362,48 +391,137 @@ public class TextEditorManager {
         if (!this.isTextModeActive || this.activeTextBox == null) return false;
 
         TextBoxState box = this.activeTextBox;
+        Minecraft mc = Minecraft.getInstance();
+        Font font = mc.font;
 
         if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
             this.isTextModeActive = false;
             this.activeTextBox = null;
             return true;
-        } else if ((keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) && hasCtrl) {
-            onCommit.run();
+        }
+
+        // Буфер обмена (системный: работает и с другими программами)
+        if (Screen.isSelectAll(keyCode)) { box.selectAll(); return true; }
+        if (Screen.isCopy(keyCode)) {
+            if (box.hasSelection()) mc.keyboardHandler.setClipboard(box.getSelectedText());
             return true;
-        } else if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
-            box.insertText("\n");
+        }
+        if (Screen.isCut(keyCode)) {
+            if (box.hasSelection()) {
+                mc.keyboardHandler.setClipboard(box.getSelectedText());
+                box.deleteSelection();
+            }
             return true;
-        } else if (keyCode == GLFW.GLFW_KEY_BACKSPACE) {
-            box.deleteBack();
-            return true;
-        } else if (keyCode == GLFW.GLFW_KEY_DELETE) {
-            box.deleteForward();
-            return true;
-        } else if (keyCode == GLFW.GLFW_KEY_LEFT) {
-            box.moveCursorLeft(hasShift, hasCtrl);
-            return true;
-        } else if (keyCode == GLFW.GLFW_KEY_RIGHT) {
-            box.moveCursorRight(hasShift, hasCtrl);
-            return true;
-        } else if (keyCode == GLFW.GLFW_KEY_HOME) {
-            box.moveCursorHome(hasShift, hasCtrl);
-            return true;
-        } else if (keyCode == GLFW.GLFW_KEY_END) {
-            box.moveCursorEnd(hasShift, hasCtrl);
+        }
+        if (Screen.isPaste(keyCode)) {
+            box.insertPasted(mc.keyboardHandler.getClipboard());
             return true;
         }
 
-        // Возвращаем false для букв и цифр, чтобы Minecraft переходил к их набору в charTyped()
+        boolean enter = keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER;
+        if (enter && hasCtrl) { onCommit.run(); return true; }
+        if (enter) { box.insertPasted("\n"); return true; }
+
+        if (keyCode == GLFW.GLFW_KEY_BACKSPACE) {
+            if (hasCtrl) box.deleteWordBack(); else box.deleteBack();
+            return true;
+        }
+        if (keyCode == GLFW.GLFW_KEY_DELETE) {
+            if (hasCtrl) box.deleteWordForward(); else box.deleteForward();
+            return true;
+        }
+        if (keyCode == GLFW.GLFW_KEY_LEFT) { box.moveCursorLeft(hasShift, hasCtrl); return true; }
+        if (keyCode == GLFW.GLFW_KEY_RIGHT) { box.moveCursorRight(hasShift, hasCtrl); return true; }
+        if (keyCode == GLFW.GLFW_KEY_UP) { moveVertical(box, font, -1, hasShift); return true; }
+        if (keyCode == GLFW.GLFW_KEY_DOWN) { moveVertical(box, font, 1, hasShift); return true; }
+
+        if (keyCode == GLFW.GLFW_KEY_HOME) {
+            if (hasCtrl || this.layoutLines.isEmpty()) box.setCaret(0, hasShift);
+            else box.setCaret(this.layoutLines.get(lineIndexOfCaret(box, this.layoutLines)).startCharIndex, hasShift);
+            return true;
+        }
+        if (keyCode == GLFW.GLFW_KEY_END) {
+            if (hasCtrl || this.layoutLines.isEmpty()) box.setCaret(box.chars.size(), hasShift);
+            else box.setCaret(this.layoutLines.get(lineIndexOfCaret(box, this.layoutLines)).endCharIndex, hasShift);
+            return true;
+        }
+
+        // Для букв и цифр возвращаем false: Minecraft сам придёт в charTyped()
         return false;
     }
 
-
     public boolean charTyped(char codePoint) {
         if (this.isTextModeActive && this.activeTextBox != null) {
-            this.activeTextBox.insertText(String.valueOf(codePoint));
+            this.activeTextBox.insertPasted(String.valueOf(codePoint)); // управляющие символы отфильтруются
             return true;
         }
         return false;
+    }
+
+// ---------- Помощники ----------
+
+    private int lineIndexOfCaret(TextBoxState box, List<TextBoxState.TextLine> lines) {
+        for (int l = 0; l < lines.size(); l++) {
+            TextBoxState.TextLine line = lines.get(l);
+            if (box.caret >= line.startCharIndex && (box.caret <= line.endCharIndex || l == lines.size() - 1)) return l;
+        }
+        return 0;
+    }
+
+    /** Индекс символа в строке, ближайший к горизонтальной позиции (в единицах шрифта). */
+    private int caretFromWidth(TextBoxState box, Font font, TextBoxState.TextLine line, double localX) {
+        if (localX <= 0) return line.startCharIndex;
+        int best = line.startCharIndex;
+        double bestDiff = Double.MAX_VALUE;
+        for (int i = line.startCharIndex; i <= line.endCharIndex; i++) {
+            double w = font.width(box.getFormattedSubstring(line.startCharIndex, i));
+            double diff = Math.abs(localX - w);
+            if (diff < bestDiff) { bestDiff = diff; best = i; }
+        }
+        return best;
+    }
+
+    private void moveVertical(TextBoxState box, Font font, int dir, boolean select) {
+        List<TextBoxState.TextLine> lines = this.layoutLines;
+        if (lines.isEmpty()) return;
+        int cur = lineIndexOfCaret(box, lines);
+        int target = cur + dir;
+        if (target < 0) { box.setCaret(0, select); return; }
+        if (target >= lines.size()) { box.setCaret(box.chars.size(), select); return; }
+
+        TextBoxState.TextLine from = lines.get(cur);
+        double x = font.width(box.getFormattedSubstring(from.startCharIndex, Math.min(box.caret, from.endCharIndex)));
+        box.setCaret(caretFromWidth(box, font, lines.get(target), x), select);
+    }
+
+    /** Мышь в индекс символа с учётом поворота рамки текста (0/90/180/270°). */
+    private int charIndexAt(TextBoxState box, Font font, double mx, double my, double pCell, int canvasScreenLeft, int renderY) {
+        int screenX1 = canvasScreenLeft + (int) (box.x1 * pCell);
+        int screenY1 = renderY + (int) (box.y1 * pCell);
+        int screenX2 = canvasScreenLeft + (int) (box.x2 * pCell);
+        int screenY2 = renderY + (int) (box.y2 * pCell);
+
+        float renderScale = (float) (box.fontScale * pCell);
+        int lineH = Math.max(1, (int) (9 * renderScale));
+        int rotStep = (box.rotation % 4 + 4) % 4;
+
+        boolean vertical = (rotStep == 1 || rotStep == 3);
+        int boxLineLength = vertical ? (screenY2 - screenY1) : (screenX2 - screenX1);
+        int maxW = Math.max(10, (int) ((boxLineLength - 4) / renderScale));
+        List<TextBoxState.TextLine> lines = box.getWrappedLines(font, maxW);
+
+        // along: расстояние вдоль строки, across: расстояние поперёк (в сторону следующих строк)
+        double along, across;
+        switch (rotStep) {
+            case 1 -> { along = my - (screenY1 + 2); across = (screenX2 - 2) - mx; }
+            case 2 -> { along = (screenX2 - 2) - mx; across = (screenY2 - 2) - my; }
+            case 3 -> { along = (screenY2 - 2) - my; across = mx - (screenX1 + 2); }
+            default -> { along = mx - (screenX1 + 2); across = my - (screenY1 + 2); }
+        }
+
+        int lineIdx = (int) Math.floor(across / lineH);
+        lineIdx = Math.max(0, Math.min(lines.size() - 1, lineIdx));
+        return caretFromWidth(box, font, lines.get(lineIdx), along / renderScale);
     }
 
     // =========================================================================

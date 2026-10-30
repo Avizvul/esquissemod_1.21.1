@@ -157,6 +157,7 @@ public class SketchbookScreen extends Screen {
     private boolean isTextCreatingWithDrag = false;
     private final TextEditorManager textEditor = new TextEditorManager();
 
+    private boolean isInitialized = false;
 
     boolean hasShift = Screen.hasShiftDown();
     boolean hasCtrl = Screen.hasControlDown();
@@ -186,14 +187,21 @@ public class SketchbookScreen extends Screen {
     @Override
     protected void init() {
         super.init();
-        if (!this.isPageLoaded) {
-            net.minecraft.world.item.ItemStack stack = this.minecraft.player.getMainHandItem();
-            if (!stack.is(ModItems.SKETCHBOOK.get())) {
-                stack = this.minecraft.player.getOffhandItem();
-            }
-            this.currentPageIndex = stack.getOrDefault(ModDataComponents.LAST_PAGE.get(), 0);
-            this.isPageLoaded = true;
+
+        // init() вызывается заново при изменении размера окна и в других случаях.
+        // Рисунок, поворот, линейка и циркуль создаются один раз, иначе несохранённое пропадёт
+        if (this.isInitialized) {
+            clampSketchbook();
+            return;
         }
+        if (this.minecraft == null || this.minecraft.player == null) return;
+
+        ItemStack stack = this.minecraft.player.getMainHandItem();
+        if (!stack.is(ModItems.SKETCHBOOK.get())) {
+            stack = this.minecraft.player.getOffhandItem();
+        }
+
+        this.currentPageIndex = stack.getOrDefault(ModDataComponents.LAST_PAGE.get(), 0);
 
         if (hasSavedState) {
             this.exactGuiLeft = savedGuiLeft;
@@ -207,38 +215,41 @@ public class SketchbookScreen extends Screen {
         }
         clampSketchbook();
 
-        if (this.minecraft != null && this.minecraft.player != null) {
-            ItemStack stack = this.minecraft.player.getMainHandItem();
-            if (stack.has(ModDataComponents.SKETCHBOOK_PAGES.get())) {
-                this.pages = new ArrayList<>(stack.get(ModDataComponents.SKETCHBOOK_PAGES.get()));
-            } else {
-                this.pages = new ArrayList<>();
-                SketchData emptyData = SketchData.fromArray(new int[this.canvasWidth * this.resolutionMultiplier][this.canvasHeight * this.resolutionMultiplier]);
-                for (int i = 0; i < 16; i++) {
-                    this.pages.add(emptyData);
-                }
+        if (stack.has(ModDataComponents.SKETCHBOOK_PAGES.get())) {
+            this.pages = new ArrayList<>(stack.get(ModDataComponents.SKETCHBOOK_PAGES.get()));
+        } else {
+            this.pages = new ArrayList<>();
+            SketchData emptyData = SketchData.fromArray(new int[this.canvasWidth * this.resolutionMultiplier][this.canvasHeight * this.resolutionMultiplier]);
+            for (int i = 0; i < 16; i++) {
+                this.pages.add(emptyData);
             }
-
-            if (savedRulerX != -1) {
-                this.rulerX = savedRulerX;
-                this.rulerY = savedRulerY;
-                this.rulerAngle = savedRulerAngle;
-                this.isRulerActive = wasRulerActive;
-                this.compassState = savedCompassState;
-                this.compassAnchorX = savedCompassAnchorX;
-                this.compassAnchorY = savedCompassAnchorY;
-                this.compassRadius = savedCompassRadius;
-            } else {
-                this.rulerX = this.width / 2.0;
-                this.rulerY = this.height / 2.0;
-            }
-            loadPaintLevels();
-            if (!this.isToolRestored) {
-                restoreSavedTool();
-                this.isToolRestored = true;
-            }
-            loadPagePixels();
         }
+        if (this.currentPageIndex >= this.pages.size()) {
+            this.currentPageIndex = Math.max(0, this.pages.size() - 1);
+        }
+
+        if (savedRulerX != -1) {
+            this.rulerX = savedRulerX;
+            this.rulerY = savedRulerY;
+            this.rulerAngle = savedRulerAngle;
+            this.isRulerActive = wasRulerActive;
+            this.compassState = savedCompassState;
+            this.compassAnchorX = savedCompassAnchorX;
+            this.compassAnchorY = savedCompassAnchorY;
+            this.compassRadius = savedCompassRadius;
+        } else {
+            this.rulerX = this.width / 2.0;
+            this.rulerY = this.height / 2.0;
+        }
+
+        loadPaintLevels();
+        if (!this.isToolRestored) {
+            restoreSavedTool();
+            this.isToolRestored = true;
+        }
+        loadPagePixels();
+
+        this.isInitialized = true;
     }
 
     private void loadPagePixels() {
@@ -1302,7 +1313,8 @@ public class SketchbookScreen extends Screen {
     }
 
     private void renderColorToolButton(GuiGraphics guiGraphics, int mouseX, int mouseY, int x, net.minecraft.world.item.ItemStack colorStack, ResourceLocation baseTex, ResourceLocation tintTex, Tool tool) {
-        boolean isSelected = (this.activeTool == tool);
+        Tool eff = (this.activeTool == Tool.TEXT) ? this.previousDrawingTool : this.activeTool;
+        boolean isSelected = (eff == tool);
         int scaledWidth = this.buttonWidth * this.buttonScale;
         int scaledHeight = this.buttonHeight * this.buttonScale;
         int peekY = this.height - scaledHeight;
@@ -1710,23 +1722,32 @@ public class SketchbookScreen extends Screen {
 
         int scaledBtnWidth = toolCoords.scaledBtnWidth();
         int scaledBtnHeight = toolCoords.scaledBtnHeight();
+        int baseY = this.height - (scaledBtnHeight / 2);
+        int peekY = toolCoords.peekY();
+        // 2. Распаковываем ВСЕ X-координаты из toolCoords
+        int pencilX = toolCoords.pencilX();
+        int colorPencilX = toolCoords.colorPencilX();
+        int colorMarkerX = toolCoords.colorMarkerX();
+        int eraserX = toolCoords.eraserX();
+        int kneadedX = toolCoords.kneadedX();
+        int smudgeX = toolCoords.smudgeX();
+
+        int rulerX = toolCoords.rulerX();
+        int magGlassX = toolCoords.magGlassX();
+        int compassX = toolCoords.compassX();
+        int stampX = toolCoords.stampX();
+
         int pencilY = (effectiveTool == Tool.PENCIL) ? peekY : baseY;
         int colorPencilY = (effectiveTool == Tool.COLOR_PENCIL) ? peekY : baseY;
         int colorMarkerY = (effectiveTool == Tool.COLOR_MARKER) ? peekY : baseY;
         int eraserY = (effectiveTool == Tool.ERASER) ? peekY : baseY;
         int smudgeY = (effectiveTool == Tool.SMUDGE) ? peekY : baseY;
         int kneadedY = (effectiveTool == Tool.KNEADED_ERASER) ? peekY : baseY;
-        int rulerX = toolCoords.rulerX();
-        int magGlassX = toolCoords.magGlassX();
-        int compassX = toolCoords.compassX();
-        int peekY = toolCoords.peekY();
-        int stampX = toolCoords.stampX();
 
         int btnFileWidth = 8;
         int btnFileHeight = 8;
         int btnX = renderX;
         int btnY = renderY + ((this.fileHeight - btnFileHeight) / 2) * this.scale;
-        int baseY = this.height - (scaledBtnHeight / 2);
 
         TabCoords coords = getTabCoords(renderX, renderY, drawWidth);
         int scaledTabWidth = this.tabWidth * this.tabScale;
@@ -2439,10 +2460,11 @@ public class SketchbookScreen extends Screen {
                     sb.append('\n');
                     continue;
                 }
-
+                boolean hasStyle = curB || curI || curU || curM;
+                boolean colorChanges = sc.colorId != curColor;
                 boolean needReset = (curB && !sc.bold) || (curI && !sc.italic)
                         || (curU && !sc.underline) || (curM && !sc.strikethrough)
-                        || (curColor != -1 && sc.colorId != curColor);
+                        || (colorChanges && (curColor != -1 || hasStyle));
 
                 if (needReset) {
                     sb.append("§r");

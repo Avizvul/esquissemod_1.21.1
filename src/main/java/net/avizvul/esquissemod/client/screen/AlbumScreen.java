@@ -42,15 +42,16 @@ public class AlbumScreen extends AbstractContainerScreen<AlbumMenu> {
     // Рисунок: целый множитель от текстуры 126×192, поэтому пиксели остаются чёткими
     private static final int DRAW_MUL = 1;
     private static final int DRAW_W = 126 * DRAW_MUL, DRAW_H = 192 * DRAW_MUL;
-    private static final int DRAW_Y = AREA_Y + 4;
+    private static final int DRAW_Y_SHIFT = 25;  // насколько опустить рисунок (в пикселях GUI)
+    private static final int DRAW_Y = AREA_Y + 4 + DRAW_Y_SHIFT;
     private static final boolean DRAW_PAPER = true;
 
     // Подпись
     private static final int TEXT_Y = DRAW_Y + DRAW_H + 4;
     private static final int TEXT_MAX_W = LEFT_AREA_W - 8;
-    private static final float TEXT_SCALE = 1.0f;
-    private static final int LINE_H = 9;
-    private static final int MAX_TITLE_LINES = 3;
+    private static final float TEXT_SCALE = 0.75f;
+    private static final int LINE_H = 7;
+    private static final int MAX_TITLE_LINES = 4;
     private static final int TEXT_COLOR = 0x404040;
 
     // Закладки: те же, что в скетчбуке (16×16 текстура в масштабе ×2)
@@ -58,6 +59,11 @@ public class AlbumScreen extends AbstractContainerScreen<AlbumMenu> {
     private static final int TAB_X_OFFSET = 0;   // от правого края GUI
     private static final int TAB_Y_OFFSET = 3;   // от верха GUI
     private static final int TAB_GAP = 3;
+
+    // Номера страниц (как в скетчбуке: серый цвет без тени)
+    private static final int NUM_MARGIN_X = 8;
+    private static final int NUM_MARGIN_Y = 6;
+    private static final int NUM_COLOR = 0xFF777777;
 
     private static final int SPREADS = AlbumMenu.PAGES / 2;
 
@@ -119,6 +125,9 @@ public class AlbumScreen extends AbstractContainerScreen<AlbumMenu> {
         drawPage(g, this.spread * 2 + 1, RIGHT_AREA_X, RIGHT_AREA_W);
         RenderSystem.disableBlend();
 
+        drawPageNumber(g, this.spread * 2, LEFT_AREA_X, LEFT_AREA_W, true);
+        drawPageNumber(g, this.spread * 2 + 1, RIGHT_AREA_X, RIGHT_AREA_W, false);
+
         if (this.spread > 0) {
             drawTab(g, TAB_BACK_TEX, tabX(), backTabY(), inRect(mouseX, mouseY, tabX(), backTabY(), TAB_SIZE, TAB_SIZE));
         }
@@ -134,6 +143,8 @@ public class AlbumScreen extends AbstractContainerScreen<AlbumMenu> {
         int centerX = this.leftPos + BOOK_X + areaX + areaW / 2;
         int x = centerX - DRAW_W / 2;
         int y = this.topPos + DRAW_Y;
+        int textY = this.topPos + TEXT_Y;
+        int line = 0;
 
         if (DRAW_PAPER) {
             g.blit(PAGE_TEX, x, y, DRAW_W, DRAW_H, 0.0f, 0.0f, 63, 96, 63, 96);
@@ -146,11 +157,15 @@ public class AlbumScreen extends AbstractContainerScreen<AlbumMenu> {
 
         // Название и автор показываются только у подписанных рисунков
         if (stack.getOrDefault(ModDataComponents.PAGE_SIGNED.get(), false)) {
-            drawCaption(g, stack, centerX, this.topPos + TEXT_Y);
+            line = drawCaption(g, stack, centerX, textY);
+        }
+        if (stack.getOrDefault(ModDataComponents.PAGE_COPIED.get(), false)) {
+            drawScaled(g, Component.translatable("tooltip.esquissemod.copied").getVisualOrderText(),
+                    centerX, textY + line * LINE_H);
         }
     }
 
-    private void drawCaption(GuiGraphics g, ItemStack stack, int centerX, int y) {
+    private int drawCaption(GuiGraphics g, ItemStack stack, int centerX, int y) {
         int wrapWidth = (int) (TEXT_MAX_W / TEXT_SCALE);
         int line = 0;
 
@@ -168,7 +183,9 @@ public class AlbumScreen extends AbstractContainerScreen<AlbumMenu> {
                 text = this.font.plainSubstrByWidth(text, wrapWidth - this.font.width("…")) + "…";
             }
             drawScaled(g, FormattedCharSequence.forward(text, Style.EMPTY), centerX, y + line * LINE_H);
+            line++;
         }
+        return line;
     }
 
     private void drawScaled(GuiGraphics g, FormattedCharSequence seq, int centerX, int y) {
@@ -199,6 +216,15 @@ public class AlbumScreen extends AbstractContainerScreen<AlbumMenu> {
         if (inRect(mx, my, this.leftPos + BOOK_X + LEFT_AREA_X, y, LEFT_AREA_W, AREA_H)) return this.spread * 2;
         if (inRect(mx, my, this.leftPos + BOOK_X + RIGHT_AREA_X, y, RIGHT_AREA_W, AREA_H)) return this.spread * 2 + 1;
         return -1;
+    }
+
+    private void drawPageNumber(GuiGraphics g, int pageIndex, int areaX, int areaW, boolean leftSide) {
+        String text = String.valueOf(pageIndex + 1);
+        int y = this.topPos + AREA_Y + AREA_H - NUM_MARGIN_Y - this.font.lineHeight;
+        int x = leftSide
+                ? this.leftPos + BOOK_X + areaX + NUM_MARGIN_X
+                : this.leftPos + BOOK_X + areaX + areaW - NUM_MARGIN_X - this.font.width(text);
+        g.drawString(this.font, text, x, y, NUM_COLOR, false);
     }
 
     @Override

@@ -22,53 +22,77 @@ import java.util.*;
 public class SketchTextureCache {
 
     private static final int W = 126, H = 192;
-    private static final int MAX_CACHE_SIZE = 100;
-    /** Во сколько раз текстура страницы с текстом больше холста (для чёткого текста). */
-    private static final int TEXT_SS = 2;
+    private static final int MAX_PIXEL_CACHE = 64;
+    private static final int MAX_TEXT_CACHE = 16;
+    /** Во сколько раз текстура блока с текстом крупнее холста. */
+    private static final int TEXT_SS = 4;
 
-    private static final Map<Integer, ResourceLocation> CACHE = new LinkedHashMap<>(MAX_CACHE_SIZE + 1, 0.75f, true) {
-        @Override
-        protected boolean removeEldestEntry(Map.Entry<Integer, ResourceLocation> eldest) {
-            if (size() > MAX_CACHE_SIZE) {
-                Minecraft.getInstance().getTextureManager().release(eldest.getValue());
-                return true;
+    private static final Map<Integer, ResourceLocation> PIXEL_CACHE = lru(MAX_PIXEL_CACHE);
+    private static final Map<Integer, ResourceLocation> TEXT_CACHE = lru(MAX_TEXT_CACHE);
+
+    // Очереди: блоки нельзя растеризовать прямо внутри BER
+    private static final Map<Integer, SketchData> PENDING_PIXEL = new LinkedHashMap<>();
+    private static final Map<Integer, SketchData> PENDING_TEXT = new LinkedHashMap<>();
+
+    private static Map<Integer, ResourceLocation> lru(int max) {
+        return new LinkedHashMap<>(max + 1, 0.75f, true) {
+            @Override
+            protected boolean removeEldestEntry(Map.Entry<Integer, ResourceLocation> eldest) {
+                if (size() > max) {
+                    Minecraft.getInstance().getTextureManager().release(eldest.getValue());
+                    return true;
+                }
+                return false;
             }
-            return false;
-        }
-    };
+        };
+    }
+    // Задачи, которым нужен безопасный момент в начале кадра (например, экспорт со шрифтом)
+    private static final List<Runnable> TASKS = new ArrayList<>();
 
-    // Очередь для блоков: их нельзя растеризовать прямо внутри BER
-    private static final Map<Integer, SketchData> PENDING = new LinkedHashMap<>();
-
-    /** Безопасно для BER: только возвращает готовую текстуру или null и ставит запрос в очередь. */
+    public static void runAtFrameStart(Runnable task) {
+        TASKS.add(task);
+    }
+    /** Только пиксели рисунка. Текст в GUI дорисовывается живым шрифтом (ClientRenderUtils). */
     public static ResourceLocation getIfReady(SketchData data) {
         if (data == null || data.isEmpty()) return null;
         int hash = data.hashCode();
-        ResourceLocation id = CACHE.get(hash);
-        if (id == null) PENDING.putIfAbsent(hash, data);
+        ResourceLocation id = PIXEL_CACHE.get(hash);
+        if (id == null) PENDING_PIXEL.putIfAbsent(hash, data);
         return id;
     }
 
-    /** Вызывать из RenderFrameEvent.Pre — основной таргет привязан, мир ещё не рисуется. */
-    public static void processPending() {
-        if (PENDING.isEmpty()) return;
-        List<SketchData> list = new ArrayList<>(PENDING.values());
-        PENDING.clear();
-        for (SketchData d : list) getOrCreateTexture(d);
+    /** Пиксели и текст в одной текстуре: для блока в мире, где живой шрифт с пиксельной обрезкой использовать нельзя. */
+    public static ResourceLocation getIfReadyWithText(SketchData data) {
+        if (data == null || data.isEmpty()) return null;
+        if (data.getTextElements().isEmpty()) return getIfReady(data);
+        int hash = data.hashCode();
+        ResourceLocation id = TEXT_CACHE.get(hash);
+        if (id == null) PENDING_TEXT.putIfAbsent(hash, data);
+        return id;
     }
 
-    /** Для GUI/тултипов (там можно вызывать сразу). */
-    private static ResourceLocation getOrCreateTexture(SketchData data) {
-        if (data == null || data.isEmpty()) return null;
+    /** Вызывать из RenderFrameEvent.Pre: основной таргет привязан, мир ещё не рисуется. */
+    public static void processPending() {
+        if (!TASKS.isEmpty()) {
+            List<Runnable> tasks = new ArrayList<>(TASKS);
+            TASKS.clear();
+            for (Runnable r : tasks) r.run();
+        }
+        if (PENDING_PIXEL.isEmpty() && PENDING_TEXT.isEmpty()) return;
+        List<SketchData> px = new ArrayList<>(PENDING_PIXEL.values());
+        List<SketchData> tx = new ArrayList<>(PENDING_TEXT.values());
+        PENDING_PIXEL.clear();
+        PENDING_TEXT.clear();
+        for (SketchData d : px) createTexture(d, false);
+        for (SketchData d : tx) createTexture(d, true);
+    }
 
+    private static void createTexture(SketchData data, boolean withText) {
         int hash = data.hashCode();
-        ResourceLocation cached = CACHE.get(hash);
-        if (cached != null) return cached;
+        Map<Integer, ResourceLocation> cache = withText ? TEXT_CACHE : PIXEL_CACHE;
+        if (cache.containsKey(hash)) return;
 
-        List<TextElement> texts = data.getTextElements();
-        boolean hasText = texts != null && !texts.isEmpty();
-        int k = hasText ? TEXT_SS : 1; // страницы без текста остаются 126×192
-
+        int k = withText ? TEXT_SS : 1;
         NativeImage image = new NativeImage(W * k, H * k, true);
         int[][] pixels = data.toArray(W, H);
         for (int x = 0; x < W; x++) {
@@ -84,17 +108,17 @@ public class SketchTextureCache {
             }
         }
 
-        if (hasText) {
-            rasterizeText(image, texts, k);
+        if (withText) {
+            rasterizeText(image, data.getTextElements(), k);
         }
 
-        ResourceLocation id = ResourceLocation.fromNamespaceAndPath("esquissemod", "sketch_cache_" + Math.abs(hash));
+        ResourceLocation id = ResourceLocation.fromNamespaceAndPath("esquissemod",
+                (withText ? "sketch_text_" : "sketch_px_") + Integer.toUnsignedString(hash));
         Minecraft.getInstance().getTextureManager().register(id, new DynamicTexture(image));
-        CACHE.put(hash, id);
-        return id;
+        cache.put(hash, id);
     }
 
-    private static void rasterizeText(NativeImage baseImage, List<TextElement> textElements, int k) {
+    public static void rasterizeText(NativeImage baseImage, List<TextElement> textElements, int k) {
         Minecraft mc = Minecraft.getInstance();
         Font font = mc.font;
         int tw = W * k, th = H * k;
@@ -103,7 +127,7 @@ public class SketchTextureCache {
         ByteBufferBuilder bbb = null;
         NativeImage textImage = null;
         try {
-            // Размер буфера == размер страницы (в k раз крупнее), поэтому всё, что вылезает за края,
+            // Размер буфера == размер страницы, поэтому всё, что вылезает за края,
             // аппаратно отсекается ПО ПИКСЕЛЯМ (а не по буквам).
             target = new TextureTarget(tw, th, true, Minecraft.ON_OSX);
             target.setClearColor(0f, 0f, 0f, 0f);

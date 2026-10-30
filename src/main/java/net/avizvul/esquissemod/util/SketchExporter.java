@@ -13,6 +13,12 @@ public class SketchExporter {
 
     public static void exportSketchToScreenshots(SketchData sketchData) {
         if (sketchData == null || sketchData.isEmpty()) return;
+        // Текст растеризуется через FBO, поэтому выполняем в начале кадра
+        net.avizvul.esquissemod.client.SketchTextureCache.runAtFrameStart(() -> doExport(sketchData));
+    }
+
+    private static void doExport(SketchData sketchData) {
+        if (sketchData == null || sketchData.isEmpty()) return;
 
         // 1. Гарантируем точные размеры холста (126x192) независимо от исходного массива
         int srcWidth = 126;
@@ -51,6 +57,10 @@ public class SketchExporter {
             }
         }
 
+        // Текст рисуется поверх пикселей в том же масштабе (×4), чёткость как у блока
+        if (!sketchData.getTextElements().isEmpty()) {
+            net.avizvul.esquissemod.client.SketchTextureCache.rasterizeText(image, sketchData.getTextElements(), scale);
+        }
         String timeStamp = new SimpleDateFormat("yyyy-MM-dd_HH.mm.ss").format(new Date());
         File screenshotsDir = new File(Minecraft.getInstance().gameDirectory, "screenshots");
         if (!screenshotsDir.exists()) {

@@ -55,7 +55,7 @@ public class SketchedPageBlockEntityRenderer implements BlockEntityRenderer<Sket
         drawQuad(pose, bgConsumer, 0, 0, 0.0f, 126, 192, 0.0f, 0.0f, 1.0f, 1.0f, 0xFFFFFFFF, packedLight);
 
         // 2. Единая текстура с рисунком и текстом (z = +0.01f)
-        ResourceLocation sketchTexture = SketchTextureCache.getIfReady(data); // вместо getOrCreateTexture
+        ResourceLocation sketchTexture = SketchTextureCache.getIfReadyWithText(data);
         if (sketchTexture != null) {
             VertexConsumer pixelConsumer = bufferSource.getBuffer(RenderType.entityTranslucentCull(sketchTexture));
             drawQuad(pose, pixelConsumer, 0, 0, 0.01f, 126, 192, 0.0f, 0.0f, 1.0f, 1.0f, 0xFFFFFFFF, packedLight);
